@@ -1,0 +1,21 @@
+{
+    "name": "MyProject.Scripts",
+    "rootNamespace": "",
+    "references": [
+        "Unity.InputSystem",
+        "Unity.Mathematics",
+        "Fusion.Unity",
+        "Unity.Burst",
+        "MyProject.Generated",
+        "Fusion.Addons.Physics"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

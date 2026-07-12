@@ -1,0 +1,24 @@
+{
+    "name": "MyProject.Tools.ProbePlacement.Tests",
+    "rootNamespace": "MyProject.Tools.ProbePlacement.Editor.Tests",
+    "references": [
+        "MyProject.Tools.ProbePlacement.Editor",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
