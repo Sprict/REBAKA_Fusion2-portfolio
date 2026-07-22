@@ -1,0 +1,16 @@
+{
+  "name": "com.rebaka.unused-asset-finder",
+  "version": "0.1.0",
+  "displayName": "Unused Asset Finder",
+  "description": "プロジェクト内の未参照アセットを到達可能性解析で検出し、ゴミ箱送り（復元可）/CSV 出力できるエディタ拡張。Editor 専用・依存ゼロで他プロジェクトへそのまま移植可能。",
+  "unity": "2021.3",
+  "keywords": [
+    "editor",
+    "asset",
+    "cleanup",
+    "unused"
+  ],
+  "author": {
+    "name": "REBAKA"
+  }
+}
