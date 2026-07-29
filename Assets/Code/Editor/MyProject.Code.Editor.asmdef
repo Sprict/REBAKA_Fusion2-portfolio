@@ -1,0 +1,20 @@
+{
+    "name": "MyProject.Code.Editor",
+    "rootNamespace": "",
+    "references": [
+        "MyProject.Scripts",
+        "Fusion.Unity",
+        "Fusion.Addons.Physics"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
