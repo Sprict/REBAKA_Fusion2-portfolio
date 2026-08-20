@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
-using MyFolder.Scripts.Map;
+using Rebaka.Map;
 
-namespace MyFolder.Scripts.Tests.Map
+namespace Rebaka.Tests.EditMode.Map
 {
     /// <summary>
     /// B1 生成コアの振る舞い検証（Unity Editor 非依存・純粋ロジック）。

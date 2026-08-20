@@ -1,5 +1,5 @@
 using UnityEngine;
-using MyFolder.Tests.Vibration;
+using Rebaka.Tests.Vibration;
 using System.Text;
 
 public static class RunMultiJointTest

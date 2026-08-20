@@ -1,12 +1,12 @@
 ﻿using System;
 using Fusion;
-using MyFolder.Scripts.Diagnostics;
-using MyFolder.Scripts.Network;
-using MyFolder.Scripts.Player.Posing;
+using Rebaka.Diagnostics;
+using Rebaka.Network;
+using Rebaka.Player.Posing;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// Fusion ライフサイクルの入口とサブシステム委譲を担うコンポーネント
@@ -33,12 +33,10 @@ namespace MyFolder.Scripts.Player
         [SerializeField] private bool showDebugGUI = true; // デバッグ用のオンスクリーンGUIを表示するか
         [SerializeField] private Key debugGuiToggleKey = Key.F2; // Balance Debug GUI の表示切替キー
         [SerializeField] private float gizmoSphereRadius = 0.05f; // GizmoSphereの半径
-        [SerializeField] private bool useHybridProxySimulation = true; // プロキシをハイブリッド補間で動かすか
         [SerializeField] private bool forceRemoteRenderForAllClientProxies = true; // 全クライアントプロキシにRemoteRenderを強制するか
         [SerializeField] private bool forceRemoteRenderForInputAuthorityOnClient = true; // InputAuthorityクライアントにもRemoteRenderを強制するか
-        [SerializeField] private bool relaxClientJointsOnSpawn; // スポーン時にクライアント側のジョイントを緩めるか
         [SerializeField] private bool proxyCorrectHeadAndHands; // プロキシの頭・手を補正するか
-        [SerializeField] private bool useLegacyCustomRootCorrection; // 旧来のルートボーン補正を使うか
+        [SerializeField] private bool useLegacyCustomRootCorrection; // Hybrid時: RootにNRBが無い場合の独自ルート補正を使うか
         [SerializeField] private float proxyRootPositionKp = 25f; // プロキシRoot位置のPゲイン（バネ強度）
         [SerializeField] private float proxyRootVelocityKd = 12f; // プロキシRoot速度のDゲイン（ダンパ強度）
         [SerializeField] private float proxyRootRotationKp = 18f; // プロキシRoot回転のPゲイン
@@ -51,7 +49,6 @@ namespace MyFolder.Scripts.Player
         [SerializeField] private float proxyHardSnapRootThreshold = 1.0f; // Rootがこの距離を超えたら瞬間スナップする閾値
         [SerializeField] private float proxyHardSnapPartThreshold = 0.6f; // 各パーツがこの距離を超えたら瞬間スナップする閾値
         [SerializeField] private float proxyHardSnapHoldSeconds = 0.25f; // スナップ後にLerpを再開するまでの待機秒数
-
         // 参照系
         [Header("Component References")]
         [SerializeField] private GameObject[] bodyParts; // 全身のBodyPartオブジェクト配列
@@ -89,7 +86,6 @@ namespace MyFolder.Scripts.Player
         private RagdollGroundingService _groundingService; // 接地判定サブシステム
         private RagdollRigValidator _rigValidator; // リグ構成の検証
         private RagdollRigInitializer _rigInitializer; // リグの初期化処理
-        private RagdollClientJointModeController _clientJointModeController; // クライアント側ジョイントモード制御
         private RagdollRigSetup _rigSetup; // リグセットアップ処理
         private RagdollClientProxyRuntime _clientProxyRuntime; // クライアントプロキシのランタイム処理
         private RagdollHostSimulationOrchestrator _hostSimulation; // ホスト側シミュレーション統括
@@ -98,7 +94,6 @@ namespace MyFolder.Scripts.Player
         private RagdollDebugView _debugView; // デバッグ表示
         // 階層全体の物理コンポーネント（クライアント側の強制Kinematic対象）
         private Rigidbody[] _allRigidbodies; // 階層下の全Rigidbody（kinematic強制切り替え用）
-        private ConfigurableJoint[] _allConfigurableJoints; // 階層下の全ConfigurableJoint
         private bool _proxyBootstrapApplied; // プロキシ初期化が完了したか
 
         private Rigidbody _rootRigidbody; // 胴体（ルート）のRigidbody
@@ -208,11 +203,13 @@ namespace MyFolder.Scripts.Player
                         this);
                 }
 
+                // 物理コンポーネント、プロキシボディの参照、プロキシ描画用のレンダラーをキャッシュする
                 CacheHierarchyPhysicsComponents();
                 CacheProxyBodyReferences();
                 CacheProxyRenderers();
+
                 // Hybrid モード以外は ClientProxyCorrection の bootstrap を使わない
-                _proxyBootstrapApplied = Object.HasStateAuthority || !UseHybridProxySimulation ||
+                _proxyBootstrapApplied = Object.HasStateAuthority ||
                                          ResolvedProxySyncMode != ProxySyncMode.Hybrid;
 
                 _runtime = new RagdollRuntime(this);
@@ -222,7 +219,6 @@ namespace MyFolder.Scripts.Player
                 _groundingService = new RagdollGroundingService();
                 _rigValidator = new RagdollRigValidator();
                 _rigInitializer = new RagdollRigInitializer();
-                _clientJointModeController = new RagdollClientJointModeController(this, GetInstanceID);
                 _rigSetup = new RagdollRigSetup();
                 _proxyPosePublisher = new RagdollProxyPosePublisher(this);
                 _diagnosticsReporter = new RagdollDiagnosticsReporter();
@@ -234,20 +230,19 @@ namespace MyFolder.Scripts.Player
 
                 if (!Object.HasStateAuthority)
                 {
+                    // _clientBootstrapper.Initialize()内部でHasInputAuthorityの分岐をする。
                     _clientBootstrapper.Initialize();
                 }
 
-                // 同一ラグドール内のコライダー間衝突を無効化（振動防止）
                 EnsureRigInitializer().SetupCollisionIgnores(GetComponentsInChildren<Collider>());
 
-                // パーツ→所有者の対応を登録（掴み判定の自他識別用）。
-                // DetachRootFromParent() で階層が切れる前に登録する必要がある。
                 RagdollBodyOwnerRegistry.Register(GetComponentsInChildren<Rigidbody>(true), Object);
 
                 // 親オブジェクトの Transform が毎 Tick 上書きする干渉を防ぐため
                 // APR_Root（bodyRigidbodies[0]）をワールド直下に移動させる
                 // SnapshotInterpolation モードのクライアントも Root をワールド座標で直接書くため detach する
-                if (Object.HasStateAuthority || !UseHybridProxySimulation ||
+                // Hybrid クライアントは ClientProxyCorrection の bootstrap で detach する
+                if (Object.HasStateAuthority ||
                     ResolvedProxySyncMode == ProxySyncMode.SnapshotInterpolation)
                 {
                     DetachRootFromParent();
@@ -386,7 +381,7 @@ namespace MyFolder.Scripts.Player
         /// </summary>
         private void CacheHierarchyPhysicsComponents()
         {
-            EnsureRigSetup().CacheHierarchyPhysicsComponents(this, out _allRigidbodies, out _allConfigurableJoints);
+            EnsureRigSetup().CacheHierarchyPhysicsComponents(this, out _allRigidbodies, out _);
         }
 
         /// <summary>
@@ -404,7 +399,8 @@ namespace MyFolder.Scripts.Player
         }
 
         /// <summary>
-        /// プロキシ描画用の Renderer 群をキャッシュする。
+        /// プロキシを画面へ描く Renderer コンポーネント群をキャッシュする。
+        /// Renderer は見た目の表示を担当し、Rigidbody の物理計算には関与しない。
         /// </summary>
         private void CacheProxyRenderers()
         {
@@ -469,19 +465,6 @@ namespace MyFolder.Scripts.Player
             return _rigInitializer;
         }
 
-        /// <summary>
-        /// クライアント側ジョイントモード制御を行う。
-        /// </summary>
-        private RagdollClientJointModeController EnsureClientJointModeController()
-        {
-            if (_clientJointModeController == null)
-            {
-                _clientJointModeController = new RagdollClientJointModeController(this, GetInstanceID);
-            }
-
-            return _clientJointModeController;
-        }
-
         private RagdollProxyPosePublisher EnsureProxyPosePublisher()
         {
             if (_proxyPosePublisher == null)
@@ -507,24 +490,6 @@ namespace MyFolder.Scripts.Player
         #region Client Proxy Logic
 
         /// <summary>
-        /// クライアント用: 全ConfigurableJointのドライブを無効化
-        /// スプリングフォースが振動の源になるのを防ぐ（Gang Beasts方式）
-        /// </summary>
-        private void DisableClientJointDrives()
-        {
-            EnsureClientJointModeController().DisableJointDrives(GetDriveTargetJoints());
-        }
-
-        /// <summary>
-        /// クライアント（非StateAuthority）ではジョイント拘束を解除し、受信姿勢との干渉を防ぐ。
-        /// ConfigurableJoint は Component のため enabled を持たないので、拘束自体を Free 化する。
-        /// </summary>
-        private void DisableClientJoints()
-        {
-            EnsureClientJointModeController().DisableJoints(GetDriveTargetJoints());
-        }
-
-        /// <summary>
         /// クライアント側で制御対象にすべき剛体群を取得する。
         /// bodyRigidbodies だけでは未登録Rigidbody（Sphere等）が漏れるため、
         /// 階層全体のRigidbodyを優先する。
@@ -539,19 +504,6 @@ namespace MyFolder.Scripts.Player
             return bodyRigidbodies;
         }
 
-        /// <summary>
-        /// クライアント側でドライブ無効化対象にすべきジョイント群を取得する。
-        /// </summary>
-        private ConfigurableJoint[] GetDriveTargetJoints()
-        {
-            if (_allConfigurableJoints is { Length: > 0 })
-            {
-                return _allConfigurableJoints;
-            }
-
-            return bodyJoints;
-        }
-
         #endregion
 
         #region Diagnostics
@@ -562,6 +514,12 @@ namespace MyFolder.Scripts.Player
         /// <param name="phase">診断フェーズ。</param>
         private void EmitSyncDiagnostics(string phase)
         {
+            // 毎 tick / 毎 Render から呼ばれる。RAGDOLL_NET_DIAG 未定義時は IsEnabled が定数 false なので、
+            // 引数の収集（GetKinematicTargetRigidbodies など）に入る前にここで打ち切る。
+            // ゲートが呼び出し先にしか無いと、無効時も配列取得と10引数の受け渡しが毎回走っていた。
+            if (!RagdollNetDiagnostics.IsEnabled)
+                return;
+
             Rigidbody[] rigidbodies = GetKinematicTargetRigidbodies();
             EnsureDiagnosticsReporter().EmitSyncDiagnostics(
                 phase,
@@ -569,7 +527,6 @@ namespace MyFolder.Scripts.Player
                 Runner,
                 Object,
                 rigidbodies,
-                UseHybridProxySimulation,
                 _proxyBootstrapApplied,
                 enableRootPosePrediction,
                 _rootNetworkRigidbody != null,
@@ -647,6 +604,7 @@ namespace MyFolder.Scripts.Player
         bool IClientBootstrapContext.ForceRemoteForInputAuthorityOnClient => forceRemoteRenderForInputAuthorityOnClient;
         int IClientBootstrapContext.InstanceId => GetInstanceID();
 
+        // 表示に使う時間軸だけを切り替える。Authority や物理シミュレーションの担当は変えない。
         void IClientBootstrapContext.SetForceRemoteRenderTimeframe(bool value)
         {
             if (Object != null)
@@ -655,6 +613,7 @@ namespace MyFolder.Scripts.Player
             }
         }
 
+        // Profile から解決した同期モードを、Spawn 時に適用するクライアント初期化 Strategy へ対応付ける。
         IClientProxyModeStrategy IClientBootstrapContext.CreateClientProxyModeStrategy()
         {
             switch (ResolvedProxySyncMode)
@@ -668,9 +627,7 @@ namespace MyFolder.Scripts.Player
                     return new SnapshotInterpolationClientProxyModeStrategy(this, this);
 
                 default:
-                    return UseHybridProxySimulation
-                        ? new HybridClientProxyModeStrategy(this, this)
-                        : new LegacyClientProxyModeStrategy(this, this);
+                    return new HybridClientProxyModeStrategy(this, this);
             }
         }
 
@@ -689,19 +646,8 @@ namespace MyFolder.Scripts.Player
             Debug.LogWarning(message, this);
         }
 
-        bool IClientProxyRigAccess.RelaxClientJointsOnSpawn => relaxClientJointsOnSpawn;
         bool IClientProxyRigAccess.HasRootNetworkRigidbody => _rootNetworkRigidbody != null;
         bool IClientProxyRigAccess.UseLegacyCustomRootCorrection => useLegacyCustomRootCorrection;
-
-        void IClientProxyRigAccess.DisableClientJointDrives()
-        {
-            DisableClientJointDrives();
-        }
-
-        void IClientProxyRigAccess.DisableClientJoints()
-        {
-            DisableClientJoints();
-        }
 
         void IClientProxyRigAccess.SetProxyVisualsEnabled(bool enabled)
         {
@@ -720,7 +666,6 @@ namespace MyFolder.Scripts.Player
         }
 
         ProxySyncMode IClientProxyRuntimeContext.SyncMode => ResolvedProxySyncMode;
-        bool IClientProxyRuntimeContext.UseHybridProxySimulation => UseHybridProxySimulation;
         bool IClientProxyRuntimeContext.UseForecastPhysics => ResolvedProxySyncMode == ProxySyncMode.Forecast;
         bool IClientProxyRuntimeContext.HasInputAuthority => Object != null && Object.HasInputAuthority;
         bool IClientProxyRuntimeContext.ProxyBootstrapApplied
@@ -1006,6 +951,7 @@ namespace MyFolder.Scripts.Player
             NetPoseTeleportKey++;
         }
 
+        // RagdollProxyPosePublisher の通常データを、Fusion が同期する Networked プロパティへ移す橋渡し点。
         void IProxyPosePublisherContext.ApplyProxyPoseSnapshot(ProxyPoseSnapshotData snapshot)
         {
             NetRootPosition = snapshot.RootPosition;
@@ -1051,44 +997,15 @@ namespace MyFolder.Scripts.Player
             (_leftHandContact != null && _leftHandContact.IsGrabbing) ||
             (_rightHandContact != null && _rightHandContact.IsGrabbing);
 
-        float IRagdollPhysicsContext.BalanceHeight => BalanceHeight;
-        float IRagdollPhysicsContext.BalanceStrength => BalanceStrength;
-        float IRagdollPhysicsContext.CoreStrength => CoreStrength;
-        float IRagdollPhysicsContext.LimbStrength => LimbStrength;
+        // IRagdollPhysicsContext.Profile は、22行目の `public RagdollProfile Profile => profile;`
+        // が暗黙実装している（手側コンポーネント向けに元から公開されていたもの）。
+        // 以前はここに約38個の `X => profile.x;` が並んでおり、物理パラメータを1つ足すたびに
+        // Profile / private プロパティ / interface 宣言 / この明示実装 の4箇所を触る必要があった。
+        // Profile へのフィールド追加1箇所で済むようにした。
+
+        // MoveSpeed は Profile 直読みでは代用できない（Dash/Crouch 倍率を掛けた計算値）。
+        // ここを消して profile.moveSpeed に置き換えると、コンパイルは通るがダッシュが死ぬ。
         float IRagdollPhysicsContext.MoveSpeed => MoveSpeed;
-        float IRagdollPhysicsContext.TurnSpeed => TurnSpeed;
-        float IRagdollPhysicsContext.JumpForce => JumpForce;
-        float IRagdollPhysicsContext.AirControlMultiplier => AirControlMultiplier;
-        float IRagdollPhysicsContext.StepDuration => StepDuration;
-        float IRagdollPhysicsContext.StepHeight => StepHeight;
-        float IRagdollPhysicsContext.FeetMountForce => FeetMountForce;
-        float IRagdollPhysicsContext.BalanceMargin => BalanceMargin;
-        float IRagdollPhysicsContext.IdleBalancePriority => IdleBalancePriority;
-        float IRagdollPhysicsContext.WalkingBalancePriority => WalkingBalancePriority;
-        float IRagdollPhysicsContext.IdlePoseStiffnessMultiplier => IdlePoseStiffnessMultiplier;
-        float IRagdollPhysicsContext.WalkingPoseStiffnessMultiplier => WalkingPoseStiffnessMultiplier;
-        float IRagdollPhysicsContext.StateBlendSpeed => StateBlendSpeed;
-        float IRagdollPhysicsContext.BalanceDamperRatio => BalanceDamperRatio;
-        float IRagdollPhysicsContext.PoseDamperRatio => PoseDamperRatio;
-        float IRagdollPhysicsContext.CoreDamperRatio => CoreDamperRatio;
-        float IRagdollPhysicsContext.ReachArmInputLimit => ReachArmInputLimit;
-        float IRagdollPhysicsContext.ReachUpperArmBasePitch => ReachUpperArmBasePitch;
-        float IRagdollPhysicsContext.ReachUpperArmPitchPerUnit => ReachUpperArmPitchPerUnit;
-        float IRagdollPhysicsContext.ReachUpperArmMinPitch => ReachUpperArmMinPitch;
-        float IRagdollPhysicsContext.ReachUpperArmMaxPitch => ReachUpperArmMaxPitch;
-        float IRagdollPhysicsContext.ReachLowerArmPitch => ReachLowerArmPitch;
-        float IRagdollPhysicsContext.ReachUpperArmJointSpring => ReachUpperArmJointSpring;
-        float IRagdollPhysicsContext.ReachUpperArmJointDamper => ReachUpperArmJointDamper;
-        float IRagdollPhysicsContext.ReachUpperArmJointMaxForce => ReachUpperArmJointMaxForce;
-        float IRagdollPhysicsContext.ReachLowerArmJointSpring => ReachLowerArmJointSpring;
-        float IRagdollPhysicsContext.ReachLowerArmJointDamper => ReachLowerArmJointDamper;
-        float IRagdollPhysicsContext.ReachLowerArmJointMaxForce => ReachLowerArmJointMaxForce;
-        float IRagdollPhysicsContext.RagdollDriveOffSpring => RagdollDriveOffSpring;
-        float IRagdollPhysicsContext.RagdollDriveOffDamper => RagdollDriveOffDamper;
-        float IRagdollPhysicsContext.MovementVelocityLerp => MovementVelocityLerp;
-        float IRagdollPhysicsContext.PunchImpulse => PunchImpulse;
-        float IRagdollPhysicsContext.PunchRecoveryDelaySeconds => PunchRecoveryDelaySeconds;
-        float IRagdollPhysicsContext.PunchRecoveryLerpSpeed => PunchRecoveryLerpSpeed;
         ActionPoseAsset IRagdollPhysicsContext.ReachPose => reachPose;
         bool IRagdollPhysicsContext.HasStateAuthority => Object != null && Object.HasStateAuthority;
         bool IRagdollPhysicsContext.UseForecastPhysics => ResolvedProxySyncMode == ProxySyncMode.Forecast;
@@ -1252,7 +1169,7 @@ namespace MyFolder.Scripts.Player
 
             if (_ragdollPhysics != null)
             {
-                _ragdollPhysics.SetFootGroundedInfo(isLeftFoot, isGrounded, grounding.AnyFootGrounded);
+                _ragdollPhysics.SetFootGroundedInfo(grounding.AnyFootGrounded);
             }
 
             if (grounding.ShouldAttemptRecover && _ragdollState != null)
@@ -1357,7 +1274,6 @@ namespace MyFolder.Scripts.Player
         public GameObject[] BodyParts => bodyParts;
         public Rigidbody[] BodyRigidbodies => bodyRigidbodies;
         public ConfigurableJoint[] BodyJoints => bodyJoints;
-        public bool UseHybridProxySimulation => useHybridProxySimulation;
 
         /// <summary>
         /// プロファイルから解決した実効プロキシ同期モード（useForecastPhysics 後方互換込み）。
@@ -1366,10 +1282,6 @@ namespace MyFolder.Scripts.Player
             profile != null ? profile.ResolveProxySyncMode() : ProxySyncMode.Hybrid;
 
         public Transform CenterOfMassPoint => centerOfMassPoint;
-        private float BalanceHeight => profile.balanceHeight;
-        private float BalanceStrength => profile.balanceStrength;
-        private float CoreStrength => profile.coreStrength;
-        private float LimbStrength => profile.limbStrength;
         // Dash/Crouch は moveSpeed に倍率を掛けて一時的に加減速する。
         // どちらも毎tick UpdateCurrentCommand 後の CurrentCommand から読むため、
         // ホスト権威sim・クライアント予測の両経路で同一入力から同じ倍率になる（resim安全）。
@@ -1380,47 +1292,12 @@ namespace MyFolder.Scripts.Player
 
         private bool IsDashing => _ragdollInput != null && _ragdollInput.CurrentCommand.IsDashing;
         private bool IsCrouching => _ragdollInput != null && _ragdollInput.CurrentCommand.IsCrouching;
-        private float TurnSpeed => profile.turnSpeed;
-        private float JumpForce => profile.jumpForce;
-        private float AirControlMultiplier => profile.airControlMultiplier;
-        private float StepDuration => profile.stepDuration;
-        private float StepHeight => profile.stepHeight;
-        private float FeetMountForce => profile.feetMountForce;
-        private bool ForwardIsCameraDirection => profile.forwardIsCameraDirection;
         private bool AutoGetUpWhenPossible => profile.autoGetUpWhenPossible;
-        private bool UseStepPrediction => profile.useStepPrediction;
         private float BalanceMargin => profile.balanceMargin;
-        private bool UseCOMBasedBalance => profile.useCOMBasedBalance;
 
         // Animation-Target Following設定アクセサ (Phase 2)
-        private float IdleBalancePriority => profile.idleBalancePriority;
-        private float WalkingBalancePriority => profile.walkingBalancePriority;
-        private float IdlePoseStiffnessMultiplier => profile.idlePoseStiffnessMultiplier;
-        private float WalkingPoseStiffnessMultiplier => profile.walkingPoseStiffnessMultiplier;
-        private float StateBlendSpeed => profile.stateBlendSpeed;
 
         // ダンピング設定アクセサ（微振動防止用）
-        private float BalanceDamperRatio => profile.balanceDamperRatio;
-        private float PoseDamperRatio => profile.poseDamperRatio;
-        private float CoreDamperRatio => profile.coreDamperRatio;
-        private float ReachArmInputLimit => profile.reachArmInputLimit;
-        private float ReachUpperArmBasePitch => profile.reachUpperArmBasePitch;
-        private float ReachUpperArmPitchPerUnit => profile.reachUpperArmPitchPerUnit;
-        private float ReachUpperArmMinPitch => profile.reachUpperArmMinPitch;
-        private float ReachUpperArmMaxPitch => profile.reachUpperArmMaxPitch;
-        private float ReachLowerArmPitch => profile.reachLowerArmPitch;
-        private float ReachUpperArmJointSpring => profile.reachUpperArmJointSpring;
-        private float ReachUpperArmJointDamper => profile.reachUpperArmJointDamper;
-        private float ReachUpperArmJointMaxForce => profile.reachUpperArmJointMaxForce;
-        private float ReachLowerArmJointSpring => profile.reachLowerArmJointSpring;
-        private float ReachLowerArmJointDamper => profile.reachLowerArmJointDamper;
-        private float ReachLowerArmJointMaxForce => profile.reachLowerArmJointMaxForce;
-        private float RagdollDriveOffSpring => profile.ragdollDriveOffSpring;
-        private float RagdollDriveOffDamper => profile.ragdollDriveOffDamper;
-        private float MovementVelocityLerp => profile.movementVelocityLerp;
-        private float PunchImpulse => profile.punchImpulse;
-        private float PunchRecoveryDelaySeconds => profile.punchRecoveryDelaySeconds;
-        private float PunchRecoveryLerpSpeed => profile.punchRecoveryLerpSpeed;
         private float ProxyInertiaForceScale => profile.proxyInertiaForceScale;
         private float ProxyInertiaMaxAcceleration => profile.proxyInertiaMaxAcceleration;
         private float ProxyInertiaSmoothing => profile.proxyInertiaSmoothing;

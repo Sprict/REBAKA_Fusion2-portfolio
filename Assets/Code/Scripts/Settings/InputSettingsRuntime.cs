@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Scripts.Settings
+namespace Rebaka.Settings
 {
     public static class InputSettingsRuntime
     {

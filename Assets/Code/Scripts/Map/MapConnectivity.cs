@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// F1: 占有セルの隣接 FloodFill による連結検証（devlog 2026-06-27 §6「検証 = F1 連結」）。

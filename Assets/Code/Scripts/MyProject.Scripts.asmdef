@@ -1,6 +1,6 @@
 {
     "name": "MyProject.Scripts",
-    "rootNamespace": "",
+    "rootNamespace": "Rebaka",
     "references": [
         "Unity.InputSystem",
         "Unity.Mathematics",

@@ -1,9 +1,9 @@
-using MyFolder.Scripts.Settings;
+using Rebaka.Settings;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Tests.EditMode
+namespace Rebaka.Tests.EditMode
 {
     public sealed class InputSettingsBindingOverridesTests
     {

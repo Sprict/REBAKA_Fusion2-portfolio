@@ -1,7 +1,7 @@
-using OrbitCamera = MyFolder.Scripts.Camera.OrbitCamera;
+using OrbitCamera = Rebaka.Camera.OrbitCamera;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     [DisallowMultipleComponent]
     public sealed class LocalPlayerCameraBinder : MonoBehaviour

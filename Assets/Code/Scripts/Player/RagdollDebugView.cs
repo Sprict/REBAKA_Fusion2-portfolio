@@ -1,7 +1,7 @@
 using Fusion;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// ローカルプレイヤー向けに、ラグドールの安定状態を GUI と Gizmo で可視化する補助クラスです。

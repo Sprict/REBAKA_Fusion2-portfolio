@@ -1,4 +1,4 @@
-namespace MyFolder.Scripts.Player.Posing
+namespace Rebaka.Player.Posing
 {
     /// <summary>
     /// ラグドール骨の論理ID。
@@ -8,12 +8,15 @@ namespace MyFolder.Scripts.Player.Posing
     /// 「3番目＝右上腕」が成り立つのは今のプレハブの階層順がたまたまそうだから、という暗黙依存だった。
     /// 階層構成が異なるモデルに差し替えると順序がズレて別の骨が動いてしまう ＝ これがモデル依存の正体。
     ///
-    /// このenumで骨を「意味」で指し、実 Joint との対応は <see cref="PlayerBoneMap"/> がモデルごとに保持する。
-    /// これによりポーズデータ（<see cref="ActionPoseAsset"/>）は論理IDをキーにでき、
-    /// モデルを差し替えても対応さえ取り直せば再利用できる。
+    /// このenumで骨を「意味」で指すことで、ポーズデータ（<see cref="ActionPoseAsset"/>）は
+    /// 論理IDをキーにでき、モデルを差し替えても対応さえ取り直せば再利用できる。
     ///
-    /// 数値は従来のインデックス定数（IndexRoot=0 … IndexLeftHand=14）と一致させてあるので、
-    /// 既存プレハブは現状の配列順から機械的に移行できる（<see cref="PlayerBoneMap"/> の自動割当を参照）。
+    /// この enum がボディ配列の添字の唯一の正本。RagdollPhysics / ClientProxyCorrection /
+    /// RagdollRigSetup の Index* 定数はここからキャストで導出しているので、
+    /// 骨の並びを変えるときはこの enum だけを直せばよい。
+    ///
+    /// 注: 実 Joint とのモデル別マッピングを保持する型（旧コメントの PlayerBoneMap）は未実装。
+    /// 現状は「配列順 = この enum の値」という前提のまま運用している。
     /// </summary>
     public enum LogicalJoint
     {

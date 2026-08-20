@@ -1,8 +1,8 @@
 using System;
-using MyFolder.Scripts.Diagnostics;
-using MyFolder.Scripts.Network;
+using Rebaka.Diagnostics;
+using Rebaka.Network;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// Host側で入力を取得し、命令へ変換して物理更新へ渡す処理のまとめ役
@@ -45,8 +45,9 @@ namespace MyFolder.Scripts.Player
                 return;
             }
 
+            // inputDataからCurrentCommandを生成・更新する
             _context.InputHandler.UpdateCurrentCommand(inputData);
-            RagdollCommand command = _context.InputHandler.CurrentCommand; // 👆UpdateCurrentCommandで作成したCommandを取り出す
+            RagdollCommand command = _context.InputHandler.CurrentCommand;
 
             if (RagdollNetDiagnostics.IsEnabled)
             {

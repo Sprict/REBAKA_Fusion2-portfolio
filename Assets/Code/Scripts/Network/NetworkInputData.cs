@@ -1,7 +1,7 @@
 using Fusion;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     [System.Serializable]
     public struct NetworkInputData : INetworkInput

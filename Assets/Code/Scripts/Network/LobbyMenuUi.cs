@@ -1,10 +1,10 @@
 using Fusion;
-using MyFolder.Scripts.Settings;
+using Rebaka.Settings;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// タイトル(Host/Join)画面の uGUI メニュー。

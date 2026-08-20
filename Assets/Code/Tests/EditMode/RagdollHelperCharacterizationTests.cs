@@ -1,9 +1,9 @@
-using System.Collections.Generic;
-using MyFolder.Scripts.Player;
+﻿using System.Collections.Generic;
+using Rebaka.Player;
 using NUnit.Framework;
 using UnityEngine;
 
-namespace MyFolder.Tests.EditMode
+namespace Rebaka.Tests.EditMode
 {
     public sealed class RagdollHelperCharacterizationTests
     {
@@ -221,7 +221,6 @@ namespace MyFolder.Tests.EditMode
             public bool HasStateAuthority => HasStateAuthorityValue;
             public bool ForceRemoteForAllClientProxies => ForceRemoteForAllClientProxiesValue;
             public bool ForceRemoteForInputAuthorityOnClient => ForceRemoteForInputAuthorityOnClientValue;
-            public bool UseHybridProxySimulation => true;
             public int InstanceId => 99;
 
             public void SetForceRemoteRenderTimeframe(bool value)

@@ -1,8 +1,8 @@
 using System;
-using MyFolder.Scripts.Settings;
+using Rebaka.Settings;
 using NUnit.Framework;
 
-namespace MyFolder.Tests.EditMode
+namespace Rebaka.Tests.EditMode
 {
     public sealed class InputSettingsPersistenceTests
     {

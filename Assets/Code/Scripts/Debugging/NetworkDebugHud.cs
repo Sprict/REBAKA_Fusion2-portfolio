@@ -1,18 +1,27 @@
 ﻿using System.Collections.Generic;
 using System.Text;
 using Fusion;
+using Rebaka.Player;
+using Rebaka.Player.Posing;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Scripts.Debugging
+namespace Rebaka.Debugging
 {
     /// <summary>
     /// 2-client 検証用の read-only ネットワーク状態オーバーレイ。F1 でトグル。
     ///
     /// 表示は二層構成:
     /// - コーナーHUD（画面左上）: Runner 全体情報のみ（Host/Client・LocalPlayer・Tick・RTT・接続人数）。
-    /// - ワールド空間ラベル: 各ルート NetworkObject の真上に権限（[MYINPUT]/[AUTH]/[proxy]）と
-    ///   kinematic 状態（kin/dyn）を表示。グラブ中の手を持つオブジェクトには " -> 対象名" を追記。
+    /// - ワールド空間ラベル: 各ルート NetworkObject の「見た目のルート」の真上に
+    ///   権限（[MYINPUT]/[AUTH]/[proxy]）と kinematic 状態（kin/dyn）を表示。
+    ///   グラブ中の手を持つオブジェクトには " -> 対象名" を追記。
+    ///
+    /// 追従対象について（重要・2026-08-07 修正）:
+    /// プレイヤーは RagdollRigSetup が APR_Root を NetworkObject から親子分離しており
+    /// （独立した物理移動のため）、NetworkObject 自身の transform は誰も動かさない。
+    /// そのため no.transform を追うと、ホストではスポーン位置、クライアントでは原点に
+    /// ラベルが貼り付いたままになる。追従対象は ResolveVisualRoot() で解決する。
     ///
     /// 設計原則:
     /// - 完全 read-only。シミュレーション状態には一切書き込まない（表示バグが物理バグに化けるのを防ぐ）。
@@ -100,7 +109,7 @@ namespace MyFolder.Scripts.Debugging
 
         private void DrawWorldLabels()
         {
-            // 同プロジェクトの MyFolder.Scripts.Camera 名前空間と衝突するため完全修飾
+            // 同プロジェクトの Rebaka.Camera 名前空間と衝突するため完全修飾
             UnityEngine.Camera cam = UnityEngine.Camera.main;
             if (cam == null) return;
 
@@ -164,19 +173,30 @@ namespace MyFolder.Scripts.Debugging
                 if (no == null) continue;
                 if (no.transform.parent != null) continue; // ルートのみ（Fusion が切り離したネスト NObj は独立表示される）
 
+                Transform visualRoot = ResolveVisualRoot(no);
+
                 _sb.Length = 0;
                 _sb.Append(no.name)
                    .Append(no.HasInputAuthority ? " [MYINPUT]" : "")
                    .Append(no.HasStateAuthority ? " [AUTH]" : " [proxy]");
 
-                Rigidbody rb = no.GetComponentInChildren<Rigidbody>();
+                // 分離済みプレイヤーでは NObj 配下に Rigidbody が残らないため、
+                // GetComponentInChildren では kin/dyn が常に非表示になっていた。
+                // 解決済みの見た目ルートから取り、それが無い場合だけ従来の探索へ落とす。
+                Rigidbody rb = visualRoot.GetComponent<Rigidbody>();
+                if (rb == null)
+                {
+                    rb = no.GetComponentInChildren<Rigidbody>();
+                }
                 if (rb != null)
                 {
                     _sb.Append(rb.isKinematic ? " kin" : " dyn");
                 }
 
-                _labelIndexByRoot[no.transform] = _labels.Count;
-                _labels.Add(new WorldLabel { Target = no.transform, Text = _sb.ToString() });
+                // グラブ追記は hand.transform.root で引くため、キーも見た目ルートで揃える必要がある
+                // （分離後の手の .root は APR_Root であって NObj ではない）
+                _labelIndexByRoot[visualRoot] = _labels.Count;
+                _labels.Add(new WorldLabel { Target = visualRoot, Text = _sb.ToString() });
             }
 
             // グラブ状態は「掴んでいる手」が属するルート NObj のラベルへ追記する
@@ -191,6 +211,33 @@ namespace MyFolder.Scripts.Debugging
                 label.Text = label.Text + " -> " + (hand.GrabbedBodyName ?? "(pending)");
                 _labels[index] = label;
             }
+        }
+
+        /// <summary>
+        /// ラベルが追従すべき「実際に動いている transform」を返す。
+        ///
+        /// プレイヤー: RagdollRigSetup が APR_Root を親から切り離すため、NetworkObject の
+        ///   transform は初期位置（ホスト）または原点（クライアント）に固定されたまま動かない。
+        ///   実体はラグドールのルート Rigidbody なので、そちらを返す。
+        /// プレイヤー以外（Obs_Cube / Treasure 等）: NObj 自身が動くのでそのまま返す。
+        ///
+        /// read-only 原則を守り、ここでは一切の書き込みを行わない。
+        /// </summary>
+        private static Transform ResolveVisualRoot(NetworkObject no)
+        {
+            var controller = no.GetComponent<RagdollController>();
+            if (controller != null)
+            {
+                Rigidbody[] bodies = controller.BodyRigidbodies;
+                const int rootIndex = (int)LogicalJoint.Root;
+                if (bodies != null && bodies.Length > rootIndex && bodies[rootIndex] != null)
+                {
+                    return bodies[rootIndex].transform;
+                }
+            }
+
+            // 初期化前（bodyRigidbodies 未取得）もここに落ちる。次回リフレッシュで解決される。
+            return no.transform;
         }
 
         private static NetworkRunner FindActiveRunner()

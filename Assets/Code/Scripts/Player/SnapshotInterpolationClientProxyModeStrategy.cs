@@ -1,6 +1,6 @@
 using System;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// SnapshotInterpolation モードのクライアント初期化戦略。

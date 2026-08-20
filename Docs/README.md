@@ -1,6 +1,6 @@
 # Docs の読み方
 
-> **最終更新:** 2026-07-22
+> **最終更新:** 2026-08-21
 
 このリポジトリには、現在の実装を説明する資料と、試行錯誤を残した当時の開発記録があります。すべてを順番に読む必要はありません。知りたい内容に応じて、次の入口を使ってください。
 
@@ -19,6 +19,7 @@
 ## 現在の制約を確認する
 
 - [`ARCHITECTURE_FAILURE_MODES.md`](ARCHITECTURE_FAILURE_MODES.md) — 解決済みの故障、現在も残る制約、未検証事項
+- [`VERIFICATION.md`](VERIFICATION.md) — Preflightの自動検証と、2026-08-21にユーザー本人が行ったUnity Editor手動確認
 
 ## 設計判断と検証を深掘りする
 
@@ -26,6 +27,7 @@
 - [`2026-06-27_map_generation_decision.md`](devlogs/2026-06-27_map_generation_decision.md) — マップ生成方式を比較して選んだ時点の設計判断
 - [`2026-06-28_map_loop_quality_codex.md`](devlogs/2026-06-28_map_loop_quality_codex.md) — マップ生成実装後のループ率改善と測定結果
 - [`2026-07-20_legacy-treasure-carry-removal.md`](devlogs/2026-07-20_legacy-treasure-carry-removal.md) — 廃止済み機能をruntime・設定・asset・test単位で削除した記録
+- [`2026-08-10_preflight-profile-separation.md`](devlogs/2026-08-10_preflight-profile-separation.md) — Production / MapのPreflight分離とUnity Editor手動確認
 
 ## 過去の開発記録
 

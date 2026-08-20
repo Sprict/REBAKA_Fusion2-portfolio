@@ -1,7 +1,7 @@
 using Fusion;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// スポーン位置の管理を一元化するクラス。
@@ -17,17 +17,14 @@ namespace MyFolder.Scripts.Network
         [Header("Settings")]
         [SerializeField] private int maxPlayers = 4;
 
-        // 各スロットの使用状態を管理
-        // true = 使用中, false = 空き
-        private bool[] _slotOccupied;
-
-        // どのスロットにどのPlayerRefが割り当てられているか
-        // -1 = 未割り当て
+        // どのスロットにどのPlayerRefが割り当てられているか。
+        // -1 = 未割り当て（＝空きスロットの唯一の定義）。
+        // 切断復帰に備えて ReleaseSpawnPoint(preserveSlot:true) では -1 に戻さないため、
+        // 「予約済みだが本人は不在」もこの配列だけで表現できる。
         private int[] _slotToPlayerId;
 
         private void Awake()
         {
-            _slotOccupied = new bool[maxPlayers];
             _slotToPlayerId = new int[maxPlayers];
             for (int i = 0; i < maxPlayers; i++)
             {
@@ -48,7 +45,6 @@ namespace MyFolder.Scripts.Network
             {
                 if (_slotToPlayerId[slotIndex] == player.PlayerId)
                 {
-                    _slotOccupied[slotIndex] = true;
                     Debug.Log($"[SpawnPointManager] Player {player.PlayerId} reconnected → Slot {slotIndex}");
                     return GetSpawnPositionAt(slotIndex);
                 }
@@ -57,9 +53,8 @@ namespace MyFolder.Scripts.Network
             // 2. 新規: 空きスロットを順番に探す
             for (int slotIndex = 0; slotIndex < maxPlayers; slotIndex++)
             {
-                if (!_slotOccupied[slotIndex] && _slotToPlayerId[slotIndex] == -1)
+                if (_slotToPlayerId[slotIndex] == -1)
                 {
-                    _slotOccupied[slotIndex] = true;
                     _slotToPlayerId[slotIndex] = player.PlayerId;
                     Debug.Log($"[SpawnPointManager] Player {player.PlayerId} assigned → Slot {slotIndex}");
                     return GetSpawnPositionAt(slotIndex);
@@ -87,7 +82,6 @@ namespace MyFolder.Scripts.Network
                     {
                         _slotToPlayerId[i] = -1;
                     }
-                    _slotOccupied[i] = false;
                     Debug.Log($"[SpawnPointManager] Slot {i} released for Player {player.PlayerId} (preserved={preserveSlot})");
                     return;
                 }
@@ -131,9 +125,10 @@ namespace MyFolder.Scripts.Network
         }
 
         /// <summary>
-        /// スポーンポイントが設定されていない場合のデフォルト位置
+        /// スポーンポイントが設定されていない場合のデフォルト位置。
+        /// SpawnPointManager 自体が無いときのフォールバックとして PlayerSpawner からも使う。
         /// </summary>
-        private Vector3 GetDefaultSpawnPosition()
+        public static Vector3 GetDefaultSpawnPosition()
         {
             return new Vector3(0, 2, 0);
         }

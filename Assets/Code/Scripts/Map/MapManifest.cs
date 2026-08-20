@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// ホストが確定したレイアウトを配布するための最小 payload（devlog 2026-06-27 §6 / §9 / E2）。

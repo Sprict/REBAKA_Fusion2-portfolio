@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 
-namespace MyFolder.Editor.Preflight
+namespace Rebaka.Editor.Preflight
 {
     /// <summary>
     /// チェック#1: NetworkProjectConfig.fusion が正本パスに1つだけ存在するか。

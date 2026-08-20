@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
-using MyFolder.Scripts.Map;
+using Rebaka.Map;
 
-namespace MyFolder.Scripts.Tests.Map
+namespace Rebaka.Tests.EditMode.Map
 {
     /// <summary>
     /// (C) 深さ→宝/敵スポーン重み付け 純コアの検証（Unity Editor 非依存）。

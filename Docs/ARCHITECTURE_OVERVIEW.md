@@ -1,6 +1,6 @@
 # Bungling Delvers — アクティブラグドール同期の全体像
 
-> **最終確認:** 2026-07-22
+> **最終確認:** 2026-08-21
 >
 > 個別のdevlogを読む前に、現在のプレイヤー同期方式と主要クラスの役割を把握するための資料です。
 
@@ -70,7 +70,16 @@ flowchart LR
 - `RagdollProfile`: 物理調整値と同期方式の設定を保持
 - `RagdollControllerContracts.cs`: Controllerと各サブシステムの間で使う小さなcontext interfaceを定義するファイル
 
-クラス名のファイルには一部`RagDoll*.cs`という旧表記が残っていますが、C#の型名は`Ragdoll*`へ統一しています。
+現行スナップショットでは、プレイヤー関連のファイル名とC#の型名を`Ragdoll*`へ統一しています。APR由来の型名や外部アセットの名前は別の責務として残しています。
+
+## Preflightの統合前確認
+
+Editorの`Tools > REBAKA > Preflight Check`には、目的の異なる2つのprofileがあります。
+
+- `Production Integration`: `Test_Playground`を対象に、本番統合を止めるべきFailを確認する
+- `Map Prototype`: `MapNetworkSandbox`を対象に、マップ試作の配線を確認する。MapのFailはMap作業を止めるが、Production統合のFailとは分けて扱う
+
+各profileは対象sceneの完全パスを前提条件として確認し、additive loadした別sceneやPrefab Stageのobjectを対象sceneの結果へ混ぜない設計です。ユーザー本人によるEditor目視確認の範囲と限界は[`VERIFICATION.md`](VERIFICATION.md)に記録しています。
 
 ## 公開抜粋について
 

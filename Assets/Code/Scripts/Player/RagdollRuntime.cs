@@ -1,6 +1,6 @@
 using System;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// RagdollController が使う入力・状態・物理サブシステムを生成して結び付ける初期化用クラスです。

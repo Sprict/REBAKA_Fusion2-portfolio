@@ -1,9 +1,9 @@
-using Fusion;
-using MyFolder.Scripts.Network;
-using MyFolder.Scripts.Player.Posing;
+﻿using Fusion;
+using Rebaka.Network;
+using Rebaka.Player.Posing;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// 全身ポーズ同期（SnapshotInterpolation モード）の共有定数。
@@ -35,50 +35,39 @@ namespace MyFolder.Scripts.Player
         Rigidbody RootRigidbody { get; }
     }
 
+    /// <summary>
+    /// 物理層が Controller から読む値の契約。
+    ///
+    /// 【2026-08-07 変更】以前はチューニング値ごとに専用メンバーを持っており、
+    /// 物理パラメータを1つ足すたびに4箇所（RagdollProfile → Controller の private プロパティ →
+    /// この interface の宣言 → Controller の明示実装）を触る必要があった。約38メンバーが
+    /// <c>X =&gt; profile.x;</c> の写経で、情報量ゼロの転送層になっていた。
+    /// Profile を直接渡す形にして、その4箇所を1箇所（Profile へのフィールド追加のみ）に減らした。
+    ///
+    /// ここに残っているのは <b>Profile から直接読めないもの</b>だけである。
+    /// 新しいチューニング値を足すときは、この interface ではなく
+    /// <see cref="RagdollProfile"/> にフィールドを足して <c>_context.Profile.xxx</c> で読む。
+    /// </summary>
     internal interface IRagdollPhysicsContext
     {
-        float BalanceHeight { get; }
-        float BalanceStrength { get; }
-        float CoreStrength { get; }
-        float LimbStrength { get; }
+        /// <summary>
+        /// チューニング値の正本。物理層はここから直接読む。
+        /// </summary>
+        RagdollProfile Profile { get; }
+
+        /// <summary>
+        /// 実効移動速度。<b>Profile.moveSpeed の直読みでは代用できない。</b>
+        /// Dash / Crouch の倍率を掛けた計算値であり、直読みに置き換えると
+        /// ダッシュとしゃがみがコンパイルを通ったまま無効になる。
+        /// 倍率は毎tick の CurrentCommand から読むため、ホスト権威sim・
+        /// クライアント予測の両経路で同一入力から同じ値になる（resim 安全）。
+        /// </summary>
         float MoveSpeed { get; }
-        float TurnSpeed { get; }
-        float JumpForce { get; }
-        float AirControlMultiplier { get; }
-        float StepDuration { get; }
-        float StepHeight { get; }
-        float FeetMountForce { get; }
-        float BalanceMargin { get; }
-        float IdleBalancePriority { get; }
-        float WalkingBalancePriority { get; }
-        float IdlePoseStiffnessMultiplier { get; }
-        float WalkingPoseStiffnessMultiplier { get; }
-        float StateBlendSpeed { get; }
-        float BalanceDamperRatio { get; }
-        float PoseDamperRatio { get; }
-        float CoreDamperRatio { get; }
-        float ReachArmInputLimit { get; }
-        float ReachUpperArmBasePitch { get; }
-        float ReachUpperArmPitchPerUnit { get; }
-        float ReachUpperArmMinPitch { get; }
-        float ReachUpperArmMaxPitch { get; }
-        float ReachLowerArmPitch { get; }
-        float ReachUpperArmJointSpring { get; }
-        float ReachUpperArmJointDamper { get; }
-        float ReachUpperArmJointMaxForce { get; }
-        float ReachLowerArmJointSpring { get; }
-        float ReachLowerArmJointDamper { get; }
-        float ReachLowerArmJointMaxForce { get; }
-        float RagdollDriveOffSpring { get; }
-        float RagdollDriveOffDamper { get; }
-        float MovementVelocityLerp { get; }
-        float PunchImpulse { get; }
-        float PunchRecoveryDelaySeconds { get; }
-        float PunchRecoveryLerpSpeed { get; }
 
         /// <summary>
         /// Reach(到達)アクションの静的決めポーズ。論理骨ごとの rest 相対デルタを保持する。
         /// null の場合は従来のパラメトリック値にフォールバックする。
+        /// Profile ではなく Controller 側の [SerializeField]（モデル別に録り直すため）。
         /// </summary>
         ActionPoseAsset ReachPose { get; }
 
@@ -87,32 +76,51 @@ namespace MyFolder.Scripts.Player
         /// ラグドール化（バランス喪失）を抑止する（崖よじ登り用、HFF同等の考え方）。
         /// </summary>
         bool IsAnyHandGrabbing { get; }
+
+        /// <summary>Fusion の状態権限。実行時状態であり Profile 由来ではない。</summary>
         bool HasStateAuthority { get; }
+
+        /// <summary>ResolvedProxySyncMode から導出。実行時状態であり Profile 由来ではない。</summary>
         bool UseForecastPhysics { get; }
     }
 
+    /// <summary>
+    /// <see cref="RagdollClientBootstrapper"/> が必要とする Authority 情報、描画設定、
+    /// 同期モード別 Strategy の生成機能だけを <see cref="RagdollController"/> から公開する契約。
+    /// </summary>
     internal interface IClientBootstrapContext
     {
         bool HasInputAuthority { get; }
         bool HasStateAuthority { get; }
+        /// <summary>すべてのクライアントプロキシへ Remote 描画時刻を強制する設定。</summary>
         bool ForceRemoteForAllClientProxies { get; }
+        /// <summary>Input Authority を持つクライアントのプロキシだけへ Remote 描画時刻を強制する設定。</summary>
         bool ForceRemoteForInputAuthorityOnClient { get; }
-        bool UseHybridProxySimulation { get; }
         int InstanceId { get; }
+        /// <summary>
+        /// NetworkObject が描画に Local/Remote のどちらの時刻を使うかを設定する。
+        /// シミュレーションの Authority や物理計算の担当は変更しない。
+        /// </summary>
         void SetForceRemoteRenderTimeframe(bool value);
+        /// <summary>解決済みの <see cref="ProxySyncMode"/> に対応するクライアント初期化 Strategy を生成する。</summary>
         IClientProxyModeStrategy CreateClientProxyModeStrategy();
         void LogClientBootstrap(string key, string message, float throttle, string dedupeKey = null);
         void LogClientDebug(string message);
         void LogClientWarning(string message);
     }
 
+    /// <summary>
+    /// プロキシ同期モード別 Strategy が、クライアント側リグの表示・Joint・
+    /// Root の NetworkRigidbody 設定だけを操作するための契約。
+    /// </summary>
     internal interface IClientProxyRigAccess
     {
-        bool RelaxClientJointsOnSpawn { get; }
         bool HasRootNetworkRigidbody { get; }
         bool UseLegacyCustomRootCorrection { get; }
-        void DisableClientJointDrives();
-        void DisableClientJoints();
+        /// <summary>
+        /// リグを画面へ描く Renderer コンポーネント群を有効化または無効化する。
+        /// Rigidbody や Collider の物理状態は変更しない。
+        /// </summary>
         void SetProxyVisualsEnabled(bool enabled);
         void DisableRootNetworkRigidbody();
     }
@@ -161,7 +169,6 @@ namespace MyFolder.Scripts.Player
     internal interface IClientProxyRuntimeContext
     {
         ProxySyncMode SyncMode { get; }
-        bool UseHybridProxySimulation { get; }
         bool UseForecastPhysics { get; }
         bool HasInputAuthority { get; }
         bool ProxyBootstrapApplied { get; set; }
@@ -207,6 +214,10 @@ namespace MyFolder.Scripts.Player
         void EmitSyncDiagnostics(string phase);
     }
 
+    /// <summary>
+    /// <see cref="RagdollProxyPosePublisher"/> が物理姿勢を読み取り、
+    /// <see cref="RagdollController"/> の Networked 状態へ書き戻すための契約。
+    /// </summary>
     internal interface IProxyPosePublisherContext
     {
         void EnsureProxyBodyReferences();
@@ -219,6 +230,9 @@ namespace MyFolder.Scripts.Player
         Rigidbody GetBodyRigidbody(int index);
         void ApplyPartPose(int slot, Vector3 relativePosition, Quaternion relativeRotation);
         void IncrementPoseTeleportKey();
+        /// <summary>
+        /// 通常の C# データである <paramref name="snapshot"/> を、同期対象の Networked プロパティへコピーする。
+        /// </summary>
         void ApplyProxyPoseSnapshot(ProxyPoseSnapshotData snapshot);
         void RecordHostGroundTruthSample(Vector3 actualRootPosition, Vector3 actualRootVelocity);
     }

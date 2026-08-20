@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// マップ自動生成（B1 連結 ＋ N1 埋め込みパスグラフ）の目視確認用サンドボックス。

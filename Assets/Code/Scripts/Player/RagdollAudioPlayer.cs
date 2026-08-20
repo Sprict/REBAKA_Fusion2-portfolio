@@ -1,7 +1,7 @@
 using UnityEngine;
 using Random = UnityEngine.Random;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     internal sealed class RagdollAudioPlayer
     {

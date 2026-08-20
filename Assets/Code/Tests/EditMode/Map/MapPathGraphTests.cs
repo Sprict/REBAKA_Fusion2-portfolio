@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
-using MyFolder.Scripts.Map;
+using Rebaka.Map;
 
-namespace MyFolder.Scripts.Tests.Map
+namespace Rebaka.Tests.EditMode.Map
 {
     /// <summary>
     /// N1 埋め込みパスグラフの検証（devlog 2026-06-27 §6 / §10）。

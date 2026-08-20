@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>パスグラフのノード（配置後のワールド座標に展開済み）。</summary>
     public readonly struct MapPathGraphNode

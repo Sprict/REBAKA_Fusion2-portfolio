@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
-using MyFolder.Scripts.Map;
+using Rebaka.Map;
 
-namespace MyFolder.Scripts.Tests.Map
+namespace Rebaka.Tests.EditMode.Map
 {
     /// <summary>
     /// 段階 B（Unity 層）の変換の検証。

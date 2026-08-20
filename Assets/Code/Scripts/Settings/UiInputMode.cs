@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Scripts.Settings
+namespace Rebaka.Settings
 {
     /// <summary>
     /// UI の Select 表示（ゲームパッド／キーボード用カーソル）を出すべきかを追跡する。

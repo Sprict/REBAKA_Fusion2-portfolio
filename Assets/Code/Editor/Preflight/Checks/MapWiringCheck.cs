@@ -1,9 +1,11 @@
+using ArgumentNullException = System.ArgumentNullException;
 using System.Collections.Generic;
-using MyFolder.Scripts.Map;
+using System.Linq;
+using Rebaka.Map;
 using UnityEditor;
 using UnityEngine;
 
-namespace MyFolder.Editor.Preflight
+namespace Rebaka.Editor.Preflight
 {
     /// <summary>
     /// チェック#6: Map 系コンポーネントのシーン配線（必須参照が設定されているか）。
@@ -23,15 +25,27 @@ namespace MyFolder.Editor.Preflight
         }
 
         public string Name => "Map 系シーン配線";
+        public string ExpectedScenePath { get; }
+
+        public MapWiringCheck(string expectedScenePath)
+        {
+            ExpectedScenePath = expectedScenePath ?? throw new ArgumentNullException(nameof(expectedScenePath));
+        }
 
         public PreflightResult Run()
         {
             MapBuilder[] builders = Object.FindObjectsByType<MapBuilder>(
-                FindObjectsInactive.Include, FindObjectsSortMode.None);
+                FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Where(IsInExpectedScene)
+                .ToArray();
             MapTreasureSpawner[] spawners = Object.FindObjectsByType<MapTreasureSpawner>(
-                FindObjectsInactive.Include, FindObjectsSortMode.None);
+                FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Where(IsInExpectedScene)
+                .ToArray();
             MapNetworkDistributor[] distributors = Object.FindObjectsByType<MapNetworkDistributor>(
-                FindObjectsInactive.Include, FindObjectsSortMode.None);
+                FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Where(IsInExpectedScene)
+                .ToArray();
 
             var snapshot = new Snapshot
             {
@@ -44,21 +58,30 @@ namespace MyFolder.Editor.Preflight
             return Evaluate(snapshot);
         }
 
+        private bool IsInExpectedScene(Component component)
+        {
+            return ActiveSceneCheck.MatchesExpectedScenePath(
+                component.gameObject.scene.path,
+                ExpectedScenePath);
+        }
+
         public static PreflightResult Evaluate(Snapshot s)
         {
-            if (s.BuilderCount == 0 && s.SpawnerCount == 0 && s.DistributorCount == 0)
+            var missingRoles = new List<string>();
+            if (s.BuilderCount == 0) missingRoles.Add("MapBuilder");
+            if (s.SpawnerCount == 0) missingRoles.Add("MapTreasureSpawner");
+            if (s.DistributorCount == 0) missingRoles.Add("MapNetworkDistributor");
+
+            if (missingRoles.Count > 0)
             {
-                return PreflightResult.Warn(
-                    "Map 系コンポーネントが開いているシーンにありません（未検査）。",
-                    "MapNetworkSandbox を開いてから再実行する。");
+                return PreflightResult.Fail(
+                    "対象シーンに必須コンポーネントがありません: " + string.Join(", ", missingRoles),
+                    "MapNetworkSandbox に3役を各1個以上配置してください。");
             }
 
             var problems = new List<string>();
             if (s.BuilderCatalogMissing) problems.Add("MapBuilder の Catalog Asset が未設定");
             if (s.SpawnerPrefabMissing) problems.Add("MapTreasureSpawner の Treasure Prefab が未設定");
-            if (s.DistributorCount > 0 && s.BuilderCount == 0)
-                problems.Add("MapNetworkDistributor があるのに MapBuilder がシーンにない");
-
             if (problems.Count == 0)
             {
                 return PreflightResult.Pass(

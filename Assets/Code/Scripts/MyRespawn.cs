@@ -1,9 +1,9 @@
 using UnityEngine;
 using Fusion;
-using MyFolder.Scripts.Player;
-using MyFolder.Scripts.Network;
+using Rebaka.Player;
+using Rebaka.Network;
 
-namespace MyFolder.Scripts.Respawn
+namespace Rebaka.Respawn
 {
     /// <summary>
     /// プレイヤーのリスポーン処理を行うネットワーク対応コンポーネント。

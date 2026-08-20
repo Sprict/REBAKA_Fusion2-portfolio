@@ -4,7 +4,7 @@ using Fusion;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// 段階C 検証専用の最小ネットワークランチャー（本番 SessionManager とは独立）。

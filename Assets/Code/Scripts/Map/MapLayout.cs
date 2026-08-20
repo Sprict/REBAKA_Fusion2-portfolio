@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// 配置済みモジュール 1 個分。離散配置（整数セル原点＋90°回転ステップ）のみで姿勢が決まる。

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     internal sealed class RagdollStateEvaluator
     {

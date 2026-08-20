@@ -4,13 +4,13 @@ using System.Text;
 using System.Linq;
 using Fusion;
 using Fusion.Sockets;
-using MyFolder.Scripts.Player;
-using MyFolder.Scripts.Network;
+using Rebaka.Player;
+using Rebaka.Network;
 using System;
 
 /// <summary>
 /// クライアント側プロキシの動作をホスト上でシミュレートしてテストする。
-///
+/// 
 /// ホストとして起動し、移動入力を注入した後:
 ///   1. ホスト側のルート位置・回転・速度を記録（= NetRootPosition相当）
 ///   2. 仮想クライアントプロキシが ApplySoftRootCorrection でどう追従するかを計算

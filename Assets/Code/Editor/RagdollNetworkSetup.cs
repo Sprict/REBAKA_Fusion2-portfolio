@@ -9,7 +9,7 @@ using Fusion.Addons.Physics;
 using UnityEditor;
 using UnityEngine;
 
-namespace MyFolder.Editor
+namespace Rebaka.Editor
 {
     public static class RagdollNetworkSetup
     {

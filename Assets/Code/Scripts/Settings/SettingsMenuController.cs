@@ -2,14 +2,14 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Fusion;
-using MyFolder.Scripts.Network;
+using Rebaka.Network;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
-namespace MyFolder.Scripts.Settings
+namespace Rebaka.Settings
 {
     [Serializable]
     public sealed class SettingsTabPage
@@ -67,7 +67,6 @@ namespace MyFolder.Scripts.Settings
 
             _actions = new REBAKA_Fusion2();
             InputSettingsRuntime.Register(_actions.asset);
-            _actions.UI.Enable();
             ConfigureInputSystemUiModule();
 
             WireButtons();
@@ -99,6 +98,7 @@ namespace MyFolder.Scripts.Settings
         {
             if (_actions != null)
             {
+                _actions.UI.Enable();
                 _actions.UI.ToggleSettings.performed += OnToggleSettings;
                 _actions.UI.Cancel.performed += OnCancel;
             }
@@ -110,6 +110,7 @@ namespace MyFolder.Scripts.Settings
             {
                 _actions.UI.ToggleSettings.performed -= OnToggleSettings;
                 _actions.UI.Cancel.performed -= OnCancel;
+                _actions.UI.Disable();
             }
         }
 

@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Text;
 using Fusion;
 using Fusion.Sockets;
-using MyFolder.Scripts.Player;
-using MyFolder.Scripts.Network;
+using Rebaka.Player;
+using Rebaka.Network;
 using System;
 using System.Linq;
 

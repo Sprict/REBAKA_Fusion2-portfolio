@@ -1,17 +1,16 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
-using MyFolder.Scripts.Player;
-using MyFolder.Scripts.Settings;
-using MyFolder.Scripts.Utils;
+using Rebaka.Player;
+using Rebaka.Settings;
+using Rebaka.Utils;
 
-namespace MyFolder.Scripts.Camera
+namespace Rebaka.Camera
 {
     /// <summary>
     /// 三人称オービットカメラ（2026-06-29 Human Fall Flat 風に再設計）。
     ///
     /// - Player/Look X → カメラがプレイヤーの周りを水平方向に旋回（ヨー）。
     /// - 垂直は固定角（height/distance 比で決まる見下ろし角）。Player/Look Yはカメラを動かさない
-    ///   （Player/Look Y は体の上下＝リーチ狙いに使うため、InputCollector 側で消費）。
+    ///   （Player/Look Y は体の上下＝リーチ狙いに使うため、InputCollector 側で消費）。　
     /// - プレイヤーがラグドールで揺れてもカメラが揺れないよう、注視ピボットを強くローパスする。
     /// - UE5 スプリングアーム相当の衝突回避で壁/地面にめり込まない。
     ///
@@ -32,11 +31,11 @@ namespace MyFolder.Scripts.Camera
         [Tooltip("Player/Look Xでの水平旋回感度（度/Lookデルタ）。")]
         [SerializeField] private float orbitSensitivityX = 0.2f;
         [Tooltip("水平旋回を反転する。")]
-        [SerializeField] private bool invertOrbitX = false;
+        [SerializeField] private bool invertOrbitX;
 
         [Header("Follow Movement Direction")]
         [Tooltip("オンにすると、プレイヤーの進行方向の背後へカメラが自動で回り込む（Player/Look X旋回と併用可）。")]
-        [SerializeField] private bool followMovementDirection = false;
+        [SerializeField] private bool followMovementDirection;
         [Tooltip("進行方向へカメラが回り込む速さ。大きいほど機敏に背後へ。")]
         [SerializeField] private float movementFollowSpeed = 2f;
 

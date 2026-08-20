@@ -5,10 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Fusion;
-using MyFolder.Scripts.Player;
+using Rebaka.Player;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Diagnostics
+namespace Rebaka.Diagnostics
 {
     /// <summary>
     /// ラグドール物理同期のA/B比較検証用メトリクス収集コンポーネント。

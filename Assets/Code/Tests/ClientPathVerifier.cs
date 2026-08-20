@@ -1,5 +1,5 @@
 using UnityEngine;
-using MyFolder.Scripts.Player;
+using Rebaka.Player;
 
 /// <summary>
 /// ホスト上で「クライアント側のコードパスが正しく設定されるか」を検証する。

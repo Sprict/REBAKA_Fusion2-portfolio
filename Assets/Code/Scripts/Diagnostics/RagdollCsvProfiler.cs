@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Diagnostics
+namespace Rebaka.Diagnostics
 {
     /// <summary>
     /// ラグドール物理同期の時系列データをCSVファイルに記録するプロファイラー。

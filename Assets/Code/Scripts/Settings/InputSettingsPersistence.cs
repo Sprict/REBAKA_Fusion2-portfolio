@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Settings
+namespace Rebaka.Settings
 {
     /// <summary>
     /// 入力設定の永続化を管理するクラス

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Scripts.Utils
+namespace Rebaka.Utils
 {
     /// <summary>
     /// ParrelSync（同一マシン上の2プロセス検証）専用の入力デバイス制限ユーティリティ。

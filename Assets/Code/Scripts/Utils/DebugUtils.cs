@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Utils
+namespace Rebaka.Utils
 {
     public static class DebugUtils
     {

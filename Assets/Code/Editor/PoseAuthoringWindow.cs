@@ -13,12 +13,12 @@
 
 #if UNITY_EDITOR
 using System.Collections.Generic;
-using MyFolder.Scripts.Player;
-using MyFolder.Scripts.Player.Posing;
+using Rebaka.Player;
+using Rebaka.Player.Posing;
 using UnityEditor;
 using UnityEngine;
 
-namespace MyFolder.Editor
+namespace Rebaka.Editor
 {
     public sealed class PoseAuthoringWindow : EditorWindow
     {

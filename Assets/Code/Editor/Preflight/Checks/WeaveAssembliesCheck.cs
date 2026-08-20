@@ -1,7 +1,7 @@
 using System.IO;
 using UnityEngine;
 
-namespace MyFolder.Editor.Preflight
+namespace Rebaka.Editor.Preflight
 {
     /// <summary>
     /// チェック#2: config の AssembliesToWeave にゲームアセンブリが含まれるか。

@@ -1,28 +1,51 @@
-using MyFolder.Editor.Preflight;
+using Rebaka.Editor.Preflight;
 using NUnit.Framework;
 
-namespace MyFolder.Editor.Tests
+namespace Rebaka.Editor.Tests
 {
     public sealed class MapWiringCheckTests
     {
         [Test]
-        public void Evaluate_WarnsWhenNoMapComponentsInScene()
+        public void Constructor_StoresExpectedScenePath()
         {
-            var result = MapWiringCheck.Evaluate(default);
-            Assert.That(result.Status, Is.EqualTo(PreflightStatus.Warning));
+            const string expectedScenePath = "Assets/Level/Scenes/MapNetworkSandbox.unity";
+
+            var check = new MapWiringCheck(expectedScenePath);
+
+            Assert.That(check.ExpectedScenePath, Is.EqualTo(expectedScenePath));
+        }
+
+        [Test]
+        public void Evaluate_FailsWhenMapBuilderIsMissing()
+        {
+            var result = MapWiringCheck.Evaluate(CreateWiredSnapshot(spawnerCount: 1, distributorCount: 1));
+
+            Assert.That(result.Status, Is.EqualTo(PreflightStatus.Fail));
+            Assert.That(result.Message, Does.Contain("MapBuilder"));
+        }
+
+        [Test]
+        public void Evaluate_FailsWhenMapTreasureSpawnerIsMissing()
+        {
+            var result = MapWiringCheck.Evaluate(CreateWiredSnapshot(builderCount: 1, distributorCount: 1));
+
+            Assert.That(result.Status, Is.EqualTo(PreflightStatus.Fail));
+            Assert.That(result.Message, Does.Contain("MapTreasureSpawner"));
+        }
+
+        [Test]
+        public void Evaluate_FailsWhenMapNetworkDistributorIsMissing()
+        {
+            var result = MapWiringCheck.Evaluate(CreateWiredSnapshot(builderCount: 1, spawnerCount: 1));
+
+            Assert.That(result.Status, Is.EqualTo(PreflightStatus.Fail));
+            Assert.That(result.Message, Does.Contain("MapNetworkDistributor"));
         }
 
         [Test]
         public void Evaluate_PassesWhenAllWired()
         {
-            var s = new MapWiringCheck.Snapshot
-            {
-                BuilderCount = 1,
-                SpawnerCount = 1,
-                DistributorCount = 1,
-                BuilderCatalogMissing = false,
-                SpawnerPrefabMissing = false,
-            };
+            var s = CreateWiredSnapshot(builderCount: 1, spawnerCount: 1, distributorCount: 1);
             var result = MapWiringCheck.Evaluate(s);
             Assert.That(result.Status, Is.EqualTo(PreflightStatus.Pass));
         }
@@ -30,7 +53,8 @@ namespace MyFolder.Editor.Tests
         [Test]
         public void Evaluate_FailsWhenBuilderCatalogMissing()
         {
-            var s = new MapWiringCheck.Snapshot { BuilderCount = 1, BuilderCatalogMissing = true };
+            var s = CreateWiredSnapshot(builderCount: 1, spawnerCount: 1, distributorCount: 1);
+            s.BuilderCatalogMissing = true;
             var result = MapWiringCheck.Evaluate(s);
             Assert.That(result.Status, Is.EqualTo(PreflightStatus.Fail));
             Assert.That(result.Message, Does.Contain("Catalog"));
@@ -39,17 +63,26 @@ namespace MyFolder.Editor.Tests
         [Test]
         public void Evaluate_FailsWhenSpawnerPrefabMissing()
         {
-            var s = new MapWiringCheck.Snapshot { SpawnerCount = 1, SpawnerPrefabMissing = true };
+            var s = CreateWiredSnapshot(builderCount: 1, spawnerCount: 1, distributorCount: 1);
+            s.SpawnerPrefabMissing = true;
             var result = MapWiringCheck.Evaluate(s);
             Assert.That(result.Status, Is.EqualTo(PreflightStatus.Fail));
+            Assert.That(result.Message, Does.Contain("Treasure Prefab"));
         }
 
-        [Test]
-        public void Evaluate_FailsWhenDistributorHasNoBuilder()
+        private static MapWiringCheck.Snapshot CreateWiredSnapshot(
+            int builderCount = 0,
+            int spawnerCount = 0,
+            int distributorCount = 0)
         {
-            var s = new MapWiringCheck.Snapshot { DistributorCount = 1, BuilderCount = 0 };
-            var result = MapWiringCheck.Evaluate(s);
-            Assert.That(result.Status, Is.EqualTo(PreflightStatus.Fail));
+            return new MapWiringCheck.Snapshot
+            {
+                BuilderCount = builderCount,
+                SpawnerCount = spawnerCount,
+                DistributorCount = distributorCount,
+                BuilderCatalogMissing = false,
+                SpawnerPrefabMissing = false,
+            };
         }
     }
 }

@@ -1,18 +1,26 @@
 using System.Collections.Generic;
-using MyFolder.Scripts.Player;
+using Rebaka.Player;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 
-namespace MyFolder.Tests.EditMode
+namespace Rebaka.Tests.EditMode
 {
     /// <summary>
-    /// バランス用 ConfigurableJoint の damper ratio による減衰挙動を検証する回帰テスト。
+    /// BN-1 回帰防止テスト: バランス用 ConfigurableJoint の damper ratio による減衰挙動を検証する。
     ///
     /// 背景:
     ///   RagdollProfile.balanceStrength = 5000, balanceDamperRatio = 0.1 の場合
     ///   balanceDamper = 500 となりホストY軸振幅 0.269m で M2 FAIL（2026-03-27 計測）。
     ///   balanceDamperRatio = 0.15 に変更し balanceDamper = 750 で改善を期待。
+    ///
+    /// 【重要・2026-08-07 追記】上記はこのシミュレーションモデル上の結論であり、
+    ///   実機の最適値ではない。実際のプロファイルは手動チューニングで ratio=0.025
+    ///   （damper=125）に落ち着いており、実機で振動は出ていない。
+    ///   下の「注意（慣性テンソルの調整）」にあるとおり、このモデルは damper 比率の
+    ///   影響を観測可能にするための人工的な条件であって、多関節ラグドールの再現ではない。
+    ///   したがってここでの比較結果を、アセット値の下限として課してはいけない
+    ///   （実際に課していたテストは characterization テストへ置き換えた）。
     ///
     /// テスト方針:
     ///   Physics.simulationMode = Script で決定論的にシミュレーションし、
@@ -30,8 +38,8 @@ namespace MyFolder.Tests.EditMode
     {
         // RagdollProfile 実パラメータ
         private const float BalanceSpring       = 5000f;
-        private const float DamperUnderdamped   = 500f;  // ratio=0.1（改善前）
-        private const float DamperImproved      = 750f;  // ratio=0.15（改善後）
+        private const float DamperUnderdamped   = 500f;  // ratio=0.1 (BN-1 前)
+        private const float DamperImproved      = 750f;  // ratio=0.15 (BN-1 後)
 
         // シミュレーション設定
         private const float DeltaTime           = 0.02f;  // Fusion の FixedUpdate 相当
@@ -72,7 +80,7 @@ namespace MyFolder.Tests.EditMode
 
         /// <summary>
         /// A/B 比較: damper=750 は damper=500 より最大角度オーバーシュートが小さい。
-        /// これが逆転すれば、damper ratio改善の効果がなくなったことを意味する。
+        /// これが逆転すれば BN-1 修正の効果がなくなったことを意味する（回帰）。
         /// </summary>
         [Test]
         public void DamperImproved_ReducesOvershoot_ComparedToUnderdamped()
@@ -121,23 +129,54 @@ namespace MyFolder.Tests.EditMode
         }
 
         /// <summary>
-        /// アセット値ガード: MainPlayer_AprProfile.balanceDamperRatio が改善値以上に保たれる。
-        /// 誰かが誤って 0.1 に戻した場合、このテストが即座に失敗する。
+        /// アセット値の characterization テスト: 現行のチューニング値を固定し、意図しない変更を検出する。
+        ///
+        /// 【2026-08-07 変更】以前はこのテストが「balanceDamperRatio >= 0.15（BN-1 修正値）」を
+        /// 要求していたが、その前提は実機のチューニングによって覆されたため撤回した。
+        ///
+        /// 経緯:
+        ///   2026-03-27  BN-1 計測で ratio=0.1（damper=500）が FAIL、0.15（damper=750）へ引き上げ
+        ///   2026-07-03  手動チューニング（c839815）で ratio=0.025（damper=125）へ引き下げ
+        ///   2026-08-07  ユーザー判断「手動チューニングのほうが正しい」。実機で振動は出ていない
+        ///
+        /// なぜ「0.15 以上」を要求できないのか:
+        ///   このファイルのシミュレーションは 1 自由度の角度振動であり、しかも damper 比率の影響を
+        ///   観測可能にするため慣性テンソルを I=30 に手動設定している（クラスコメントの「注意」参照。
+        ///   そこにも「実プレイヤーの正確な慣性再現ではない」と明記されている）。
+        ///   実際のラグドールは多関節で、接触や他関節のドライブからも減衰を受ける。
+        ///   このモデルが導いた最適値を、そのままアセットへの下限として課すのは範囲外の主張だった。
+        ///
+        /// このテストが今も守っているもの:
+        ///   「誰かが（あるいは何かの自動処理が）このチューニング値を気付かずに変えた」ことの検出。
+        ///   意図して変えたなら、ここの期待値も一緒に更新する。物理的な良し悪しは主張しない。
+        ///
+        /// なお damper=500 と damper=750 を比較する他のテストは、モデル自身の挙動を記録する
+        /// ドキュメンタリーテストとして有効なので残している（アセット値とは独立）。
         /// </summary>
         [Test]
-        public void MainPlayerProfile_BalanceDamperRatio_IsAtLeastImprovedValue()
+        public void MainPlayerProfile_BalanceDamper_MatchesTunedValue()
         {
             const string assetPath = "Assets/Settings/MainPlayer_AprProfile.asset";
+
+            // 実機チューニングで決まった現行値（2026-07-03 c839815）
+            const float TunedDamperRatio = 0.025f;
+            const float TunedBalanceStrength = 5000f;
+            const float Tolerance = 0.0001f;
+
             var profile = AssetDatabase.LoadAssetAtPath<RagdollProfile>(assetPath);
 
             Assert.That(profile, Is.Not.Null,
                 $"{assetPath} をロードできなかった。アセットが移動/削除された可能性がある。");
-            Assert.That(profile.balanceDamperRatio, Is.GreaterThanOrEqualTo(0.15f),
-                $"振動抑制のため balanceDamperRatio は 0.15 以上に保つ必要がある。" +
-                $" 現在値: {profile.balanceDamperRatio}。過去の FAIL値(0.1)に戻されている可能性がある。");
-            Assert.That(profile.balanceStrength * profile.balanceDamperRatio, Is.GreaterThanOrEqualTo(DamperImproved),
-                $"balanceStrength * balanceDamperRatio = {profile.balanceStrength * profile.balanceDamperRatio} は " +
-                $"{DamperImproved} 以上であるべき。");
+
+            Assert.That(profile.balanceDamperRatio, Is.EqualTo(TunedDamperRatio).Within(Tolerance),
+                $"balanceDamperRatio が実機チューニング値から変わっている。" +
+                $" 期待: {TunedDamperRatio} / 現在: {profile.balanceDamperRatio}。" +
+                $" 意図した調整ならこのテストの TunedDamperRatio も更新すること。");
+
+            Assert.That(profile.balanceStrength, Is.EqualTo(TunedBalanceStrength).Within(Tolerance),
+                $"balanceStrength が変わっている。実効ダンパー = balanceStrength * balanceDamperRatio " +
+                $"なので、片方だけ見ても挙動は判断できない。" +
+                $" 期待: {TunedBalanceStrength} / 現在: {profile.balanceStrength}。");
         }
 
         /// <summary>

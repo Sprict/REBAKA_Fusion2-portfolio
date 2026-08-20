@@ -1,6 +1,6 @@
 using UnityEngine;
 using UnityEditor;
-using MyFolder.Tests.Vibration;
+using Rebaka.Tests.Vibration;
 
 public static class AddMultiJointToScene
 {

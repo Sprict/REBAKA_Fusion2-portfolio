@@ -1,9 +1,9 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEditor;
 using Fusion;
 using System.IO;
 
-namespace MyFolder.Editor
+namespace Rebaka.Editor
 {
     /// <summary>
     /// Fusion の NetworkProjectConfig を JSON TextAsset としてベイクする。
@@ -107,3 +107,4 @@ namespace MyFolder.Editor
         }
     }
 }
+

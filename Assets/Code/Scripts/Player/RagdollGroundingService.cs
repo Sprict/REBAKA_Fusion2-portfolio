@@ -1,4 +1,4 @@
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     internal readonly struct RagdollGroundingUpdate
     {

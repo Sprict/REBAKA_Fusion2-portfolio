@@ -1,11 +1,11 @@
 ﻿using System;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
-    /// クライアント側でラグドールの初期化方針を決めるクラス
-    /// 入力権限と状態権限、リモート描画設定をもとに、
-    /// どのクライアントプロキシ戦略を使うかを決定して適用する。
+    /// <see cref="RagdollController.Spawned"/> から非 State Authority 側で呼ばれ、
+    /// NetworkObject の描画時刻と、同期モード別のクライアント用リグ設定を初期化する。
+    /// Authority や同期モードそのものを変更するクラスではない。
     /// </summary>
     internal sealed class RagdollClientBootstrapper
     {
@@ -20,10 +20,12 @@ namespace MyFolder.Scripts.Player
         }
 
         /// <summary>
-        /// クライアント側の描画モードとプロキシ戦略を初期化する。
+        /// 描画に Remote 時刻を使うかを設定し、解決済みの
+        /// <see cref="ProxySyncMode"/> に対応するプロキシ戦略を一度適用する。
         /// </summary>
         public void Initialize()
         {
+            // 全プロキシへの強制設定、または Input Authority を持つ本人だけへの強制設定をまとめる。
             bool forceRemote = _context.ForceRemoteForAllClientProxies ||
                                (_context.HasInputAuthority && _context.ForceRemoteForInputAuthorityOnClient);
 
@@ -39,6 +41,7 @@ namespace MyFolder.Scripts.Player
                 $"[RAGDOLL_CLIENT_MODE] force_remote={forceRemote} " +
                 $"stateAuthority={_context.HasStateAuthority} inputAuthority={_context.HasInputAuthority}");
 
+            // Strategy はクライアント側リグの初期設定を担当し、Authority の決定は行わない。
             _context.CreateClientProxyModeStrategy().Apply();
         }
     }

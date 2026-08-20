@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Security.Cryptography;
 
-namespace MyFolder.Editor
+namespace Rebaka.Editor
 {
     /// <summary>
     /// ParrelSync の ValidateCopiedFoldersIntegrity がロックされたファイル

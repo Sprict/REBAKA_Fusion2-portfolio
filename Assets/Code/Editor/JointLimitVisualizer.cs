@@ -24,7 +24,7 @@
 using UnityEditor;
 using UnityEngine;
 
-namespace MyFolder.Editor
+namespace Rebaka.Editor
 {
     [InitializeOnLoad]
     internal static class JointLimitVisualizer

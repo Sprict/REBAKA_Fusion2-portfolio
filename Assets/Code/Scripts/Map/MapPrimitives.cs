@@ -1,7 +1,7 @@
 // Assets/Code/Scripts/Map/MapPrimitives.cs
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// グリッド上の 4 方位。Y 軸まわり 90° 時計回り（上から見た向き、Unity の正回転方向）に並べてある。

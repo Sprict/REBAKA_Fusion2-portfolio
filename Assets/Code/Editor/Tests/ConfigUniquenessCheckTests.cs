@@ -1,8 +1,8 @@
 using System.Collections.Generic;
-using MyFolder.Editor.Preflight;
+using Rebaka.Editor.Preflight;
 using NUnit.Framework;
 
-namespace MyFolder.Editor.Tests
+namespace Rebaka.Editor.Tests
 {
     public sealed class ConfigUniquenessCheckTests
     {
