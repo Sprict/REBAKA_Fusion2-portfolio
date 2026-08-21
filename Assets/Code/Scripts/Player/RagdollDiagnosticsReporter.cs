@@ -1,9 +1,9 @@
 ﻿using System;
 using Fusion;
-using MyFolder.Scripts.Diagnostics;
+using Rebaka.Diagnostics;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// ラグドール同期とルートポーズ補正に関する診断情報を出力します。
@@ -22,7 +22,6 @@ namespace MyFolder.Scripts.Player
             NetworkRunner runner,
             NetworkObject networkObject,
             Rigidbody[] rigidbodies,
-            bool useHybridProxySimulation,
             bool proxyBootstrapApplied,
             bool enableRootPosePrediction,
             bool hasRootNetworkRigidbody,
@@ -78,21 +77,11 @@ namespace MyFolder.Scripts.Player
                 $"use_gravity_count={useGravityCount} stateAuthority={networkObject.HasStateAuthority} " +
                 $"inputAuthority={networkObject.HasInputAuthority} runner_is_resim={runner.IsResimulation} " +
                 $"render_timeframe={renderTimeframe} render_source={renderSource} force_remote={forceRemote} " +
-                $"hybrid_mode={useHybridProxySimulation} proxy_bootstrap={proxyBootstrapApplied} " +
+                $"proxy_bootstrap={proxyBootstrapApplied} " +
                 $"root_prediction={enableRootPosePrediction} " +
                 $"root_network_rigidbody={hasRootNetworkRigidbody} " +
                 $"legacy_custom_root_correction={useLegacyCustomRootCorrection}",
                 behaviour);
-
-            if (!networkObject.HasStateAuthority && !useHybridProxySimulation && nonKinematic > 0)
-            {
-                RagdollNetDiagnostics.LogKinematicLeak(
-                    $"role={role} phase={phase} rb_non_kinematic={nonKinematic} " +
-                    $"sphere_non_kinematic={sphereNonKinematic}",
-                    behaviour,
-                    0.2f,
-                    $"kinematic_leak_{behaviour.GetInstanceID()}");
-            }
         }
 
         public void RecordCsvSample(

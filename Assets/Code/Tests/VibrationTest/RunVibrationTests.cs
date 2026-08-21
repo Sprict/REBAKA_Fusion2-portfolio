@@ -1,5 +1,5 @@
 using UnityEngine;
-using MyFolder.Tests.Vibration;
+using Rebaka.Tests.Vibration;
 
 /// <summary>
 /// execute_script から呼び出してテストを開始するエントリポイント。

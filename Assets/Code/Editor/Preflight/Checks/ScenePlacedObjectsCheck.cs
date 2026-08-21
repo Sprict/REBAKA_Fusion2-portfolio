@@ -1,10 +1,11 @@
+using ArgumentNullException = System.ArgumentNullException;
 using System.Collections.Generic;
 using System.Linq;
 using Fusion;
 using UnityEditor;
 using UnityEngine;
 
-namespace MyFolder.Editor.Preflight
+namespace Rebaka.Editor.Preflight
 {
     /// <summary>
     /// チェック#4: 開いているシーンに直接配置された NetworkObject の一覧を出す。
@@ -15,6 +16,12 @@ namespace MyFolder.Editor.Preflight
     public sealed class ScenePlacedObjectsCheck : IPreflightCheck
     {
         public string Name => "シーン配置 NetworkObject（二重スポーン目視）";
+        public string ExpectedScenePath { get; }
+
+        public ScenePlacedObjectsCheck(string expectedScenePath)
+        {
+            ExpectedScenePath = expectedScenePath ?? throw new ArgumentNullException(nameof(expectedScenePath));
+        }
 
         public PreflightResult Run()
         {
@@ -24,6 +31,11 @@ namespace MyFolder.Editor.Preflight
 
             foreach (NetworkObject no in all)
             {
+                if (!IsInExpectedScene(no))
+                {
+                    continue;
+                }
+
                 // ルート NObj のみ対象（ネスト NObj は親の行と一緒に目視すればよい）
                 if (no.transform.parent != null &&
                     no.transform.parent.GetComponentInParent<NetworkObject>() != null)
@@ -36,6 +48,13 @@ namespace MyFolder.Editor.Preflight
             }
 
             return Evaluate(infos);
+        }
+
+        private bool IsInExpectedScene(Component component)
+        {
+            return ActiveSceneCheck.MatchesExpectedScenePath(
+                component.gameObject.scene.path,
+                ExpectedScenePath);
         }
 
         public static PreflightResult Evaluate(

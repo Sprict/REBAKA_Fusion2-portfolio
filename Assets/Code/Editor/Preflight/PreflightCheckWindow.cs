@@ -1,99 +1,81 @@
-using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-namespace MyFolder.Editor.Preflight
+namespace Rebaka.Editor.Preflight
 {
     /// <summary>
-    /// 統合前プリフライトチェックの実行ウィンドウ。
-    /// develop へのマージ前・2-client 検証前に Run All Checks を実行し、
-    /// 赤（Fail）が残っている間は統合しないための事前確認ウィンドウ。
-    /// チェック中の例外は Fail 扱い（例外で緑に見えるのが最悪＝誤緑回避原則）。
+    /// Preflight プロファイルを実行するウィンドウ。
+    /// Production Integration は develop 統合可否、Map Prototype は Map 作業完了可否を確認する。
     /// </summary>
     public sealed class PreflightCheckWindow : EditorWindow
     {
-        private readonly List<(string name, PreflightResult result)> _results =
-            new List<(string, PreflightResult)>();
+        private readonly PreflightProfileRunner _runner = new();
+        private PreflightRunResult _lastRun;
+        private string _lastExpectedScenePath;
         private Vector2 _scroll;
 
         [MenuItem("Tools/REBAKA/Preflight Check")]
         public static void Open() => GetWindow<PreflightCheckWindow>("Preflight Check");
 
-        public static IPreflightCheck[] CreateAllChecks() => new IPreflightCheck[]
-        {
-            new ConfigUniquenessCheck(),
-            new WeaveAssembliesCheck(),
-            new SceneRegistrationCheck(),
-            new ScenePlacedObjectsCheck(),
-            new BackupFreshnessCheck(),
-            new MapWiringCheck(),
-        };
-
         private void OnGUI()
         {
-            if (GUILayout.Button("Run All Checks", GUILayout.Height(30f)))
+            EditorGUILayout.LabelField("Production Integration", EditorStyles.boldLabel);
+            if (GUILayout.Button("Run Production Integration", GUILayout.Height(30f)))
             {
-                RunAll();
+                RunProfile(PreflightProfile.ProductionIntegration);
             }
+            EditorGUILayout.HelpBox("Test_Playground を対象に develop 統合可否を確認します。", MessageType.Info);
 
-            if (_results.Count == 0)
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Map Prototype", EditorStyles.boldLabel);
+            if (GUILayout.Button("Run Map Prototype", GUILayout.Height(30f)))
             {
-                EditorGUILayout.HelpBox(
-                    "統合・マージ前に Run All Checks を実行してください。", MessageType.Info);
+                RunProfile(PreflightProfile.MapPrototype);
+            }
+            EditorGUILayout.HelpBox("MapNetworkSandbox を対象に Map 作業完了可否を確認します。", MessageType.Info);
+
+            if (_lastRun == null)
+            {
+                EditorGUILayout.HelpBox("実行するプロファイルを選んでください。", MessageType.Info);
                 return;
             }
 
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField(_lastRun.Title, EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(_lastExpectedScenePath, EditorStyles.wordWrappedMiniLabel);
             DrawSummary();
 
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
-            foreach ((string name, PreflightResult result) in _results)
+            foreach ((string name, PreflightResult result) in _lastRun.Results)
             {
                 DrawResult(name, result);
             }
             EditorGUILayout.EndScrollView();
         }
 
-        private void RunAll()
+        private void RunProfile(PreflightProfile profile)
         {
-            _results.Clear();
-            foreach (IPreflightCheck check in CreateAllChecks())
-            {
-                PreflightResult result;
-                try
-                {
-                    result = check.Run();
-                }
-                catch (System.Exception e)
-                {
-                    Debug.LogException(e);
-                    result = PreflightResult.Fail(
-                        "チェック実行中に例外: " + e.Message,
-                        "例外はチェック自体のバグ。Console のスタックトレースを確認する。");
-                }
-                _results.Add((check.Name, result));
-            }
+            PreflightProfileDefinition definition = PreflightProfileCatalog.Create(profile);
+            _lastExpectedScenePath = definition.ExpectedScenePath;
+            _lastRun = _runner.Run(definition);
+            Repaint();
         }
 
         private void DrawSummary()
         {
-            int fails = 0;
-            int warns = 0;
-            foreach ((_, PreflightResult result) in _results)
+            if (_lastRun.FailCount > 0)
             {
-                if (result.Status == PreflightStatus.Fail) fails++;
-                else if (result.Status == PreflightStatus.Warning) warns++;
-            }
-
-            if (fails > 0)
-            {
+                string consequence = _lastRun.BlocksDevelopIntegration
+                    ? "develop 統合を阻止。赤を解決してから再実行。"
+                    : "Map 作業完了を阻止。develop 統合判定には使用しない。";
                 EditorGUILayout.HelpBox(
-                    $"FAIL {fails} 件 / WARN {warns} 件 — 統合禁止。赤を解決してから再実行。",
+                    $"FAIL {_lastRun.FailCount} 件 / WARN {_lastRun.WarningCount} 件 — {consequence}",
                     MessageType.Error);
             }
-            else if (warns > 0)
+            else if (_lastRun.WarningCount > 0)
             {
                 EditorGUILayout.HelpBox(
-                    $"WARN {warns} 件 — 黄の項目を目視確認のうえ判断。", MessageType.Warning);
+                    $"WARN {_lastRun.WarningCount} 件 — 黄の項目を目視確認のうえ判断。", MessageType.Warning);
             }
             else
             {
@@ -112,11 +94,11 @@ namespace MyFolder.Editor.Preflight
                 _ => ("FAIL", new Color(0.9f, 0.3f, 0.3f)),
             };
 
-            Color prev = GUI.color;
+            Color previousColor = GUI.color;
             EditorGUILayout.BeginHorizontal();
             GUI.color = color;
             GUILayout.Label(label, EditorStyles.boldLabel, GUILayout.Width(48f));
-            GUI.color = prev;
+            GUI.color = previousColor;
             GUILayout.Label(name, EditorStyles.boldLabel);
             EditorGUILayout.EndHorizontal();
 

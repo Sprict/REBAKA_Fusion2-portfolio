@@ -3,7 +3,7 @@
 using UnityEngine;
 using Fusion;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// プレイヤーへの操作命令をまとめたデータコンテナ（構造体）

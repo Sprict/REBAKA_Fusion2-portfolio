@@ -1,6 +1,6 @@
-using UnityEngine;
+﻿using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// クライアントプロキシ（非StateAuthority）の同期表示方式。

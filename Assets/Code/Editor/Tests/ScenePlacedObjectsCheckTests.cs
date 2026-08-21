@@ -1,11 +1,21 @@
 using System.Collections.Generic;
-using MyFolder.Editor.Preflight;
+using Rebaka.Editor.Preflight;
 using NUnit.Framework;
 
-namespace MyFolder.Editor.Tests
+namespace Rebaka.Editor.Tests
 {
     public sealed class ScenePlacedObjectsCheckTests
     {
+        [Test]
+        public void Constructor_StoresExpectedScenePath()
+        {
+            const string expectedScenePath = "Assets/Level/Scenes/Test_Playground.unity";
+
+            var check = new ScenePlacedObjectsCheck(expectedScenePath);
+
+            Assert.That(check.ExpectedScenePath, Is.EqualTo(expectedScenePath));
+        }
+
         [Test]
         public void Evaluate_PassesWhenNoScenePlacedObjects()
         {

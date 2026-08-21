@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// モジュールの Unity 側オーサリング表現（段階 B）。Inspector で footprint / socket / パスノードを置き、

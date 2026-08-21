@@ -1,6 +1,6 @@
 ﻿using Fusion.Addons.Physics;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// resimulation 中は Physics.Simulate を実行しない RunnerSimulatePhysics。

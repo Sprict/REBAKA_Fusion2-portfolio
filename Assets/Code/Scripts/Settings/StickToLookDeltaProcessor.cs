@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 using UnityEditor;
 #endif
 
-namespace MyFolder.Scripts.Settings
+namespace Rebaka.Settings
 {
     /// <summary>
     /// 右スティックの「倒し量＝レート」を Look デルタ等価に変換する。

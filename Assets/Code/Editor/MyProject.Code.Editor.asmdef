@@ -1,6 +1,6 @@
 {
     "name": "MyProject.Code.Editor",
-    "rootNamespace": "",
+    "rootNamespace": "Rebaka.Editor",
     "references": [
         "MyProject.Scripts",
         "Fusion.Unity",

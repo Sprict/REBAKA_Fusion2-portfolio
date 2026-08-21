@@ -2,7 +2,7 @@ using System;
 using Fusion;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// SnapshotInterpolation モードのクライアント側 Render() 補間本体。

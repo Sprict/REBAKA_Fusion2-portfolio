@@ -1,9 +1,9 @@
 // Assets/Code/Tests/EditMode/Map/GridRotationTests.cs
 using NUnit.Framework;
 using UnityEngine;
-using MyFolder.Scripts.Map;
+using Rebaka.Map;
 
-namespace MyFolder.Scripts.Tests.Map
+namespace Rebaka.Tests.EditMode.Map
 {
     /// <summary>
     /// 配置幾何の土台。ソケット噛み合わせは「方位の回転」と「セルベクトルの回転」が一致することに依存する。

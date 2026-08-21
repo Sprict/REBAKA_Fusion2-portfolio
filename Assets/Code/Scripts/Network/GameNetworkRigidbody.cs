@@ -1,7 +1,7 @@
 using Fusion.Addons.Physics;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// プロキシ（非ホスト）側を kinematic 固定にし、ホストのスナップショット補間だけで

@@ -1,8 +1,12 @@
 using System;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
+    /// <summary>
+    /// 1回の発行で <see cref="RagdollController"/> の Networked 状態へ渡す、
+    /// Root・頭・左右の手の姿勢と速度をまとめた通常の C# データ。
+    /// </summary>
     internal struct ProxyPoseSnapshotData
     {
         public Vector3 RootPosition;
@@ -18,6 +22,10 @@ namespace MyFolder.Scripts.Player
         public bool IsInitialized;
     }
 
+    /// <summary>
+    /// State Authority側でシミュレーションしたラグドールの姿勢を
+    /// Networkedプロパティへ発行し、クライアント側の表示・補間に利用できる状態として同期する。
+    /// </summary>
     internal sealed class RagdollProxyPosePublisher
     {
         private readonly IProxyPosePublisherContext _context;
@@ -31,6 +39,11 @@ namespace MyFolder.Scripts.Player
             _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
+        /// <summary>
+        /// 現在の State Authority 側 Rigidbody から姿勢を採取し、
+        /// <see cref="IProxyPosePublisherContext.ApplyProxyPoseSnapshot"/> を介して Networked 状態へ発行する。
+        /// 呼び出し側の <see cref="RagdollController"/> が、Spawn 直後と物理シミュレーション完了後に実行する。
+        /// </summary>
         public void Publish()
         {
             _context.EnsureProxyBodyReferences();
@@ -51,27 +64,21 @@ namespace MyFolder.Scripts.Player
                 IsInitialized = true
             };
 
-            snapshot.HeadPosition = _context.HeadRigidbody != null
-                ? _context.HeadRigidbody.position
-                : snapshot.RootPosition;
-            snapshot.HeadRotation = _context.HeadRigidbody != null
-                ? _context.HeadRigidbody.rotation
-                : snapshot.RootRotation;
+            // 各 Rigidbody 参照はインターフェース越しの取得＋Unity のネイティブ null 比較を伴うため、
+            // 位置・回転で二度引かずローカルに退避してから読む。
+            Rigidbody head = _context.HeadRigidbody;
+            snapshot.HeadPosition = head != null ? head.position : snapshot.RootPosition;
+            snapshot.HeadRotation = head != null ? head.rotation : snapshot.RootRotation;
 
-            snapshot.LeftHandPosition = _context.LeftHandRigidbody != null
-                ? _context.LeftHandRigidbody.position
-                : snapshot.RootPosition;
-            snapshot.LeftHandRotation = _context.LeftHandRigidbody != null
-                ? _context.LeftHandRigidbody.rotation
-                : snapshot.RootRotation;
+            Rigidbody leftHand = _context.LeftHandRigidbody;
+            snapshot.LeftHandPosition = leftHand != null ? leftHand.position : snapshot.RootPosition;
+            snapshot.LeftHandRotation = leftHand != null ? leftHand.rotation : snapshot.RootRotation;
 
-            snapshot.RightHandPosition = _context.RightHandRigidbody != null
-                ? _context.RightHandRigidbody.position
-                : snapshot.RootPosition;
-            snapshot.RightHandRotation = _context.RightHandRigidbody != null
-                ? _context.RightHandRigidbody.rotation
-                : snapshot.RootRotation;
+            Rigidbody rightHand = _context.RightHandRigidbody;
+            snapshot.RightHandPosition = rightHand != null ? rightHand.position : snapshot.RootPosition;
+            snapshot.RightHandRotation = rightHand != null ? rightHand.rotation : snapshot.RootRotation;
 
+            // RagdollController 側の実装が、この通常データを Networked プロパティへコピーする橋渡し点。
             _context.ApplyProxyPoseSnapshot(snapshot);
 
             if (_context.PublishFullPose)

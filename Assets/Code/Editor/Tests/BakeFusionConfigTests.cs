@@ -1,9 +1,9 @@
 using System;
 using System.IO;
-using MyFolder.Editor;
+using Rebaka.Editor;
 using NUnit.Framework;
 
-namespace MyFolder.Editor.Tests
+namespace Rebaka.Editor.Tests
 {
     public sealed class BakeFusionConfigTests
     {

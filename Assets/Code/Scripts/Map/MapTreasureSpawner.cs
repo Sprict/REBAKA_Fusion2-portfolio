@@ -2,7 +2,7 @@
 using Fusion;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// 段階C（宝配線）: ホストが確定レイアウトから <see cref="MapSpawnPlanner"/> の配置プランを計算し、

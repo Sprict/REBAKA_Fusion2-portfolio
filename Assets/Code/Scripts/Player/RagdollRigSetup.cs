@@ -1,13 +1,15 @@
 ﻿using UnityEngine;
+using Rebaka.Player.Posing;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     internal sealed class RagdollRigSetup
     {
-        private const int IndexRoot = 0;
-        private const int IndexHead = 2;
-        private const int IndexRightHand = 13;
-        private const int IndexLeftHand = 14;
+        // インデックス定数。値の正本は LogicalJoint enum。
+        private const int IndexRoot = (int)LogicalJoint.Root;
+        private const int IndexHead = (int)LogicalJoint.Head;
+        private const int IndexRightHand = (int)LogicalJoint.RightHand;
+        private const int IndexLeftHand = (int)LogicalJoint.LeftHand;
 
         public void CacheHierarchyPhysicsComponents(
             Component owner, // プレイヤーオブジェクト

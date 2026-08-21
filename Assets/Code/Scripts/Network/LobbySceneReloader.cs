@@ -2,7 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// Shutdown コールバック中は SessionManager 本体が次フレームまで生き残らないことがあるため、

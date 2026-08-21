@@ -1,4 +1,4 @@
-namespace MyFolder.Scripts.Settings
+namespace Rebaka.Settings
 {
     public static class SettingsMenuState
     {

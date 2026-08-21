@@ -3,12 +3,13 @@ using Fusion.Sockets;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using MyFolder.Scripts.Diagnostics;
+using Rebaka.Diagnostics;
+using Rebaka.Utils;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// Fusionセッションのライフサイクルを管理するクラス。
@@ -152,7 +153,12 @@ namespace MyFolder.Scripts.Network
                     PlayerCount = maxPlayers,
                     SceneManager = gameObject.AddComponent<LobbyNetworkSceneManager>(),
                     Config = config,
-                    Scene = sceneInfo
+                    Scene = sceneInfo,
+
+                    // 切断→再接続でも同じ PlayerRef を割り当てさせる。これが無いと Fusion は
+                    // 再接続時に新しい PlayerId を振るため、SpawnPointManager のスロット復帰
+                    // （_slotToPlayerId との照合）が構造上ヒットしない。
+                    PlayerUniqueId = StableClientId.Get()
                 };
 
                 var result = await _runner.StartGame(startGameArgs);
@@ -495,7 +501,7 @@ namespace MyFolder.Scripts.Network
     }
 }
 
-namespace MyFolder.Scripts.Diagnostics
+namespace Rebaka.Diagnostics
 {
     using System.Collections.Generic;
     using UnityEngine;

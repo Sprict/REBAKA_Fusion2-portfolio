@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// マップ生成上のモジュールの役割。生成器が接続順序を組むときに使う。

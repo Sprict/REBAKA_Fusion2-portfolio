@@ -3,7 +3,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine.SceneManagement;
 
-namespace MyFolder.Tests.Vibration
+namespace Rebaka.Tests.Vibration
 {
     /// <summary>
     /// VibrationTest シーンをエディタから自動構築するユーティリティ。
@@ -20,7 +20,8 @@ namespace MyFolder.Tests.Vibration
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
             // ── カメラ設定 ──────────────────────────────────────────
-            Camera mainCam = Camera.main;
+            // 同プロジェクトの Rebaka.Camera 名前空間と衝突するため完全修飾
+            UnityEngine.Camera mainCam = UnityEngine.Camera.main;
             if (mainCam != null)
             {
                 mainCam.transform.position = new Vector3(2.5f, 4f, -12f);

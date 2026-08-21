@@ -2,7 +2,7 @@
 using Fusion;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// 段階C: ホストが確定したレイアウトを最小 manifest として `[Networked]` 状態で配り、

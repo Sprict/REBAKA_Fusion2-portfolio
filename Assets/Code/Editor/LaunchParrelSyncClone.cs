@@ -6,7 +6,7 @@ using System.Text;
 using System.Security.Cryptography;
 using System;
 
-namespace MyFolder.Editor
+namespace Rebaka.Editor
 {
     /// <summary>
     /// ParrelSync クローンを直接起動するユーティリティ。

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>生成パラメータ。一本道＋短い分岐（devlog 2026-06-27 §11 ステップ2）。</summary>
     public struct MapGeneratorConfig

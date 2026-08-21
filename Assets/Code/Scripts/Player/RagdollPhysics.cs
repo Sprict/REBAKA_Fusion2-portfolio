@@ -1,9 +1,9 @@
 ﻿using System;
+using Rebaka.Player.Posing;
+using Rebaka.Utils;
 using UnityEngine;
-using MyFolder.Scripts.Utils;
-using MyFolder.Scripts.Player.Posing;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// バランス状態を表すenum
@@ -11,18 +11,238 @@ namespace MyFolder.Scripts.Player
     /// </summary>
     public enum BalanceState
     {
-        Balanced,   // 安定（重心が支持基底面内）
-        Forward,    // 前傾（重心が前方に逸脱）
-        Backward,   // 後傾（重心が後方に逸脱）
-        Left,       // 左傾（重心が左方に逸脱）
-        Right       // 右傾（重心が右方に逸脱）
+        Balanced, // 安定（重心が支持基底面内）
+        Forward, // 前傾（重心が前方に逸脱）
+        Backward, // 後傾（重心が後方に逸脱）
+        Left, // 左傾（重心が左方に逸脱）
+        Right // 右傾（重心が右方に逸脱）
     }
 
     public class RagdollPhysics
     {
+        #region Constructor
+
+        internal RagdollPhysics(IRagdollPhysicsContext context, GameObject[] bodyParts,
+            Rigidbody[] bodyRigidbodies, ConfigurableJoint[] bodyJoints)
+        {
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+
+            _bodyParts = bodyParts;
+            _bodyRigidbodies = bodyRigidbodies;
+            _bodyJoints = bodyJoints;
+
+            // ═══════════════════════════════════════════════════════════════
+            // APR_Root 原点引力バグの修正
+            // ═══════════════════════════════════════════════════════════════
+            // APR_Root のConfigurableJointはconnectedBody=null（ワールド接続）。
+            // この設計はAPR方式では正常だが、以下の条件が揃うと原点に引き寄せられる:
+            //   1. configuredInWorldSpace=false → アンカーがスポーン時のワールド原点に固定
+            //   2. xDrive/yDrive/zDrive に positionSpring > 0 → 位置ドライブで原点に引っ張る
+            // 修正: configuredInWorldSpace=true + 位置ドライブを完全ゼロクリア
+            if (_bodyJoints != null && _bodyJoints.Length > IndexRoot && _bodyJoints[IndexRoot] != null)
+            {
+                _bodyJoints[IndexRoot].configuredInWorldSpace = true;
+
+                // 位置ドライブを完全無効化（connectedBody=nullなのでワールド原点に引っ張られる原因）
+                var zeroDrive = new JointDrive { positionSpring = 0f, positionDamper = 0f, maximumForce = 0f };
+                _bodyJoints[IndexRoot].xDrive = zeroDrive;
+                _bodyJoints[IndexRoot].yDrive = zeroDrive;
+                _bodyJoints[IndexRoot].zDrive = zeroDrive;
+                _bodyJoints[IndexRoot].slerpDrive = zeroDrive;
+            }
+
+            // 地面レイヤーマスクをキャッシュ（毎tick文字列ルックアップを回避）
+            int groundLayerIndex = LayerMask.NameToLayer("Ground");
+            _groundLayerMask = groundLayerIndex >= 0 ? 1 << groundLayerIndex : 0;
+
+            InitializeJointDrives();
+            StoreOriginalPoses();
+
+            _balanceMargin = _context.Profile.balanceMargin;
+
+            // スポーン直後にバランスドライブを適用
+            // (DeactivateRagdoll() はバランス復帰時にしか呼ばれないため、
+            //  初期フレームでドライブが未適用→即ActivateRagdoll の問題を防止)
+            ApplyInitialDrives();
+        }
+
+        #endregion
+
+        #region Physics Update
+
+        /// <summary>
+        ///     メインの物理更新ループ
+        ///     moveDirection: 移動方向（WASD入力、カメラ基準）
+        ///     facingDirection: 回転先方向（カメラ前方 or 移動方向、モードで切替）
+        /// </summary>
+        public void UpdatePhysics(PlayerState state, RagdollCommand command, float deltaTime)
+        {
+            _wantsPunchRight = command.IsPunchingRight;
+            _wantsPunchLeft = command.IsPunchingLeft;
+            _wantsReachRight = command.IsGrabbingRight;
+            _wantsReachLeft = command.IsGrabbingLeft;
+
+            // reach終了検出: state に関わらず毎tick実行して確実にドライブを復元
+            if (!_wantsReachRight && _wasReachingRight)
+            {
+                _wasReachingRight = false;
+                RestoreArmDrives(true);
+                ResetArmTargetToOriginal(IndexUpperRightARM);
+                ResetArmTargetToOriginal(IndexLowerRightARM);
+            }
+
+            if (!_wantsReachLeft && _wasReachingLeft)
+            {
+                _wasReachingLeft = false;
+                RestoreArmDrives(false);
+                ResetArmTargetToOriginal(IndexUpperLeftARM);
+                ResetArmTargetToOriginal(IndexLowerLeftARM);
+            }
+
+            // 掴まり中は接地扱い: 手で何かを掴んでいる間はバランス喪失（ラグドール化）させない。
+            // ぶら下がった瞬間にラグドール化すると Reach 系ドライブが丸ごと停止し、
+            // 腕が脱力してよじ登れない（HFF 同様、懸垂中は「支持あり」とみなす）。
+            bool isGrounded = IsGrounded() || (_context != null && _context.IsAnyHandGrabbing);
+
+            // Forecast Physicsモードでクライアント側の場合:
+            // バランス判定とラグドール状態フリップはホストのCurrentStateに委ねる。
+            // クライアントで独立にバランス判定すると状態フリップ→JointDrive振動の原因になる。
+            bool isHostAuthority = _context != null && _context.HasStateAuthority;
+            bool forecastClientMode = _context != null && _context.UseForecastPhysics && !isHostAuthority;
+
+            if (forecastClientMode)
+            {
+                // ホストの状態を信頼してラグドール状態を同期
+                bool isRagdollFromHost = state == PlayerState.Ragdoll;
+                if (isRagdollFromHost != _isRagdoll)
+                {
+                    _isRagdoll = isRagdollFromHost;
+                    if (_isRagdoll)
+                        ActivateRagdoll();
+                    else
+                        DeactivateRagdoll();
+                }
+
+                _balanced = !_isRagdoll;
+            }
+            else
+            {
+                _balanced = CalculateBalanceState(isGrounded, state);
+
+                // バランス状態に応じたラグドールの自動切り替え
+                if (_balanced && _isRagdoll)
+                    DeactivateRagdoll();
+                else if (!_balanced && !_isRagdoll) ActivateRagdoll();
+            }
+
+            if (!_isRagdoll)
+            {
+                UpdateStateBlending(state, deltaTime);
+                ApplyBlendedJointDrives();
+                UpdatePunchRecovery(deltaTime);
+
+                // 回転制御（facingDirectionベース = 移動方向由来の体ヨー）
+                UpdateRootRotation(command.FacingDirection, deltaTime);
+
+                // 体の上下（マウスY由来の胴体ベンド）とロール（Alt+MouseX）を常時適用。
+                // LookDirection.x = 胴体ベンド(APR MouseYAxisBody 相当, ±0.9)
+                UpdateBodyLook(command.LookDirection.x, command.BodyRoll);
+            }
+
+            // ジャンプ初速の再武装: 足の接地状態（LastFootGrounded）を再武装の合図に使う方式は
+            // 2段階とも破綻した。
+            // 1) 離陸エッジ(false化)を待つ旧方式: 足が何らかの理由で接地判定に固着すると
+            //    false エッジが二度と来ずラッチが永久に解除されない（2026-07-09 実機、バグ6）。
+            // 2) 最低滞空時間+着地ポーリング方式: 走行中の踏み出し足はジャンプ入力の瞬間も
+            //    実際にまだ地面へ接触しているため、ガード時間を過ぎても LastFootGrounded が
+            //    "残留" ではなく素で true のままになり、ボタン長押し中に誤って再武装されて
+            //    2段ジャンプが発生した（2026-07-09 実機で確認）。
+            //
+            // 足の接地状態はジャンプ回数の制御に使う信号として不適切（歩行中は常に何らかの
+            // 形で true になりうる）。本来「1回の押下につき初速は1回」はボタンの押下/解放と
+            // 一対一であるべきで、地面判定とは独立した話。そこでボタンが離された時にのみ
+            // ラッチを解除する方式に変更する。これなら足の固着状態と無関係に毎回正しく
+            // 解除されるため、上記1)2)いずれの故障モードにも構造的に陥らない。
+            //
+            // 挙動変更の注意: 長押しでのバニーホップ（着地即再ジャンプの連打）はできなくなり、
+            // ボタンを離して押し直す必要がある。これは今回のバグ報告（長押しで意図せず2段
+            // ジャンプする）が求めていた挙動そのものでもある。
+            if (!command.IsJumping)
+                _jumpVelocityApplied = false;
+
+            float movementControlMultiplier = isGrounded ? 1f : _context.Profile.airControlMultiplier;
+
+            // 状態に基づいた物理制御（移動力・ジャンプ等）
+            switch (state)
+            {
+                case PlayerState.Idle:
+                    if (!_isRagdoll)
+                        ProcessWalking(command.MoveDirection, deltaTime);
+                    break;
+                case PlayerState.Walking:
+                    ApplyMovementForce(command.MoveDirection, movementControlMultiplier);
+                    if (!_isRagdoll)
+                        ProcessWalking(command.MoveDirection, deltaTime);
+                    break;
+                case PlayerState.Jumping:
+                    ProcessJumpingPhysics();
+                    ApplyMovementForce(command.MoveDirection, movementControlMultiplier);
+                    break;
+                case PlayerState.Reaching:
+                    // つかみ(Reaching)中も移動・歩行を許可し、物を持ち運べるようにする。
+                    // 状態評価で Grabbing は Walking より優先されるため(RagdollStateEvaluator)、
+                    // Walking と同じ移動力・歩行処理をここでも適用しないと運搬中に静止してしまう。
+                    ApplyMovementForce(command.MoveDirection, movementControlMultiplier);
+                    if (!_isRagdoll)
+                        ProcessWalking(command.MoveDirection, deltaTime);
+                    ProcessReachingPhysics(command.LookDirection);
+                    break;
+                case PlayerState.Punching:
+                    ProcessPunchingPhysics();
+                    break;
+                case PlayerState.Ragdoll:
+                    if (isGrounded)
+                        DeactivateRagdoll();
+                    break;
+            }
+
+            // ポーズオーサリングのプレビュー: 状態/入力に依らず、指定側の Reach ポーズを
+            // 最後に上書き適用する。ツール側がアセットを編集すると次tickで反映され、
+            // 重力下の実機ポーズとして即座に確認できる。
+            if (_posePreviewActive && !_isRagdoll) ApplyReachPose(_posePreviewRight, 0f, 0f);
+        }
+
+        #endregion
+
+        #region Root Rotation
+
+        /// <summary>
+        ///     ルートの回転制御（facingDirectionベース）
+        ///     facingDirection が zero の場合は向き維持（移動方向モードでidle時）
+        /// </summary>
+        private void UpdateRootRotation(Vector3 facingDirection, float deltaTime)
+        {
+            if (_bodyJoints == null || !_bodyJoints[IndexRoot])
+                return;
+
+            // facingDirection が zero → 向き維持（移動方向モードでidle時）
+            if (facingDirection.sqrMagnitude < 0.01f)
+                return;
+
+            var lookRotation = Quaternion.LookRotation(facingDirection.normalized, Vector3.up);
+            _bodyJoints[IndexRoot].targetRotation = Quaternion.Slerp(
+                _bodyJoints[IndexRoot].targetRotation,
+                Quaternion.Inverse(lookRotation),
+                _context.Profile.turnSpeed * deltaTime
+            );
+        }
+
+        #endregion
+
         #region Fields
 
         private readonly IRagdollPhysicsContext _context;
+
         // 毎tick・多数個所で型ごとに一括操作をするため、型別のフィールドにキャッシュする
         private GameObject[] _bodyParts;
         private Rigidbody[] _bodyRigidbodies;
@@ -46,31 +266,27 @@ namespace MyFolder.Scripts.Player
         private bool _jumpVelocityApplied;
 
         // 足の接地状態
-        private bool _isLeftFootGrounded = false;
-        private bool _isRightFootGrounded = false;
         private bool _isAnyFootGrounded = false;
 
         // バランス計算用
         private BalanceState _currentBalanceState = BalanceState.Balanced;
-        private Vector3 _centerOfMass;           // 重心位置
-        private Vector3 _supportPolygonCenter;   // 支持基底面の中心
-        private float _balanceMargin = 0.15f;    // バランス判定のマージン（メートル）
-        private int _groundLayerMask;               // キャッシュ済みの地面レイヤーマスク
+        private Vector3 _centerOfMass; // 重心位置
+        private Vector3 _supportPolygonCenter; // 支持基底面の中心
+        private readonly float _balanceMargin = 0.15f; // バランス判定のマージン（メートル）
+        private readonly int _groundLayerMask; // キャッシュ済みの地面レイヤーマスク
 
-        // 歩行ステップサイクル（APR方式）
+        // 歩行ステップサイクル（APR方式）— tick をまたいで持ち越す状態のみ
         private bool _stepRight;
         private bool _stepLeft;
         private float _stepRTimer;
         private float _stepLTimer;
         private bool _alertLegRight;
         private bool _alertLegLeft;
-        private bool _walkForward;
-        private bool _walkBackward;
 
         // Animation-Target Following (Phase 2)
         private float _currentBalancePriority = 0.8f;
         private float _currentPoseStiffnessMultiplier = 1f;
-        private float _lastAppliedPoseMultiplier = -1f; // Joint書き込みスキップ用キャッシュ
+        private float _lastAppliedPoseMultiplier = -1f; // BN-2: Joint書き込みスキップ用キャッシュ
 
         // Punch control
         private bool _punchingRight;
@@ -91,22 +307,23 @@ namespace MyFolder.Scripts.Player
         private ActionPoseAsset _posePreviewAsset;
 
 
-        // インデックス定数
-        private const int IndexRoot = 0;
-        private const int IndexBody = 1;
-        private const int IndexHead = 2;
-        private const int IndexUpperRightARM = 3;
-        private const int IndexLowerRightARM = 4;
-        private const int IndexUpperLeftARM = 5;
-        private const int IndexLowerLeftARM = 6;
-        private const int IndexUpperRightLeg = 7;
-        private const int IndexLowerRightLeg = 8;
-        private const int IndexUpperLeftLeg = 9;
-        private const int IndexLowerLeftLeg = 10;
-        private const int IndexRightFoot = 11;
-        private const int IndexLeftFoot = 12;
-        private const int IndexRightHand = 13;
-        private const int IndexLeftHand = 14;
+        // インデックス定数。値の正本は LogicalJoint enum（リテラルを二重に書かない）。
+        // enum 側を変えれば全ての添字が追従し、片方だけ直して骨がズレる事故を構造的に防ぐ。
+        private const int IndexRoot = (int)LogicalJoint.Root;
+        private const int IndexBody = (int)LogicalJoint.Body;
+        private const int IndexHead = (int)LogicalJoint.Head;
+        private const int IndexUpperRightARM = (int)LogicalJoint.UpperRightArm;
+        private const int IndexLowerRightARM = (int)LogicalJoint.LowerRightArm;
+        private const int IndexUpperLeftARM = (int)LogicalJoint.UpperLeftArm;
+        private const int IndexLowerLeftARM = (int)LogicalJoint.LowerLeftArm;
+        private const int IndexUpperRightLeg = (int)LogicalJoint.UpperRightLeg;
+        private const int IndexLowerRightLeg = (int)LogicalJoint.LowerRightLeg;
+        private const int IndexUpperLeftLeg = (int)LogicalJoint.UpperLeftLeg;
+        private const int IndexLowerLeftLeg = (int)LogicalJoint.LowerLeftLeg;
+        private const int IndexRightFoot = (int)LogicalJoint.RightFoot;
+        private const int IndexLeftFoot = (int)LogicalJoint.LeftFoot;
+        private const int IndexRightHand = (int)LogicalJoint.RightHand;
+        private const int IndexLeftHand = (int)LogicalJoint.LeftHand;
 
         #endregion
 
@@ -124,173 +341,7 @@ namespace MyFolder.Scripts.Player
 
         #endregion
 
-        #region Constructor
-
-        internal RagdollPhysics(IRagdollPhysicsContext context, GameObject[] bodyParts,
-            Rigidbody[] bodyRigidbodies, ConfigurableJoint[] bodyJoints)
-        {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
-
-            Debug.Log(
-                $"[RAGDOLL_DEBUG] RagdollPhysics constructor called. context: {(context != null ? "OK" : "NULL")}, bodyParts: {(bodyParts != null ? bodyParts.Length.ToString() : "NULL")}, bodyRigidbodies: {(bodyRigidbodies != null ? bodyRigidbodies.Length.ToString() : "NULL")}, bodyJoints: {(bodyJoints != null ? bodyJoints.Length.ToString() : "NULL")}");
-
-            this._bodyParts = bodyParts;
-            this._bodyRigidbodies = bodyRigidbodies;
-            this._bodyJoints = bodyJoints;
-
-            // ═══════════════════════════════════════════════════════════════
-            // APR_Root 原点引力バグの修正
-            // ═══════════════════════════════════════════════════════════════
-            // APR_Root のConfigurableJointはconnectedBody=null（ワールド接続）。
-            // この設計はAPR方式では正常だが、以下の条件が揃うと原点に引き寄せられる:
-            //   1. configuredInWorldSpace=false → アンカーがスポーン時のワールド原点に固定
-            //   2. xDrive/yDrive/zDrive に positionSpring > 0 → 位置ドライブで原点に引っ張る
-            // 修正: configuredInWorldSpace=true + 位置ドライブを完全ゼロクリア
-            if (_bodyJoints != null && _bodyJoints.Length > IndexRoot && _bodyJoints[IndexRoot] != null)
-            {
-                _bodyJoints[IndexRoot].configuredInWorldSpace = true;
-
-                // 位置ドライブを完全無効化（connectedBody=nullなのでワールド原点に引っ張られる原因）
-                JointDrive zeroDrive = new JointDrive
-                {
-                    positionSpring = 0f,
-                    positionDamper = 0f,
-                    maximumForce = 0f
-                };
-                _bodyJoints[IndexRoot].xDrive = zeroDrive;
-                _bodyJoints[IndexRoot].yDrive = zeroDrive;
-                _bodyJoints[IndexRoot].zDrive = zeroDrive;
-                _bodyJoints[IndexRoot].slerpDrive = zeroDrive;
-
-                Debug.Log("[RAGDOLL_DEBUG] APR_Root: configuredInWorldSpace=true, position drives zeroed (origin fix)");
-            }
-
-            if (bodyRigidbodies != null && bodyRigidbodies.Length > IndexRoot && bodyRigidbodies[IndexRoot] != null)
-            {
-                Debug.Log(
-                    $"APR_Root: isKinematic={bodyRigidbodies[IndexRoot].isKinematic}, useGravity={bodyRigidbodies[IndexRoot].useGravity}");
-            }
-
-            // 地面レイヤーマスクをキャッシュ（毎tick文字列ルックアップを回避）
-            int groundLayerIndex = LayerMask.NameToLayer("Ground");
-            _groundLayerMask = groundLayerIndex >= 0 ? (1 << groundLayerIndex) : 0;
-
-            InitializeJointDrives();
-            StoreOriginalPoses();
-
-            _balanceMargin = _context.BalanceMargin;
-
-            // スポーン直後にバランスドライブを適用
-            // (DeactivateRagdoll() はバランス復帰時にしか呼ばれないため、
-            //  初期フレームでドライブが未適用→即ActivateRagdoll の問題を防止)
-            ApplyInitialDrives();
-
-            Debug.Log("[RAGDOLL_DEBUG] RagdollPhysics constructor completed successfully");
-        }
-
-        #endregion
-
         #region Initialization Methods
-
-        // スポーン直後は姿勢制御が安定していないため、補正開始を遅らせる（64Hz で約3秒）
-        private int _groundSnapDelayTicks = 192;
-
-        // 補正開始後、足の接地が成立するまで補正を続ける残り tick 数（64Hz で約4秒）
-        private int _groundSnapTicksRemaining = 256;
-
-        /// <summary>
-        /// スポーン後の自動接地補正。
-        /// バランス制御はスポーン時の高さを維持し続けるため、スポーン位置が
-        /// リグの脚長に合っていないと足が床に届かず浮遊し、接地フラグが立たず
-        /// 歩行不能になる（プレハブの scale 変更やシーンの床高さに依存しない根本対策）。
-        /// 一回のスナップでは直後の姿勢制御で足が数cm持ち上がるため、
-        /// 足の接触イベントが成立するまで毎 tick 補正を続け、成立したら終了する。
-        /// </summary>
-        public void EnsureSnappedToGround()
-        {
-            if (_groundSnapTicksRemaining <= 0 || !_context.HasStateAuthority)
-            {
-                return;
-            }
-
-            if (_isAnyFootGrounded)
-            {
-                // 接地達成 → 以降は補正しない
-                _groundSnapTicksRemaining = 0;
-                return;
-            }
-
-            if (_groundSnapDelayTicks > 0)
-            {
-                _groundSnapDelayTicks--;
-                return;
-            }
-
-            _groundSnapTicksRemaining--;
-            SnapRigToGround();
-        }
-
-        /// <summary>
-        /// スポーン時にリグ全体を「足裏が床に接する高さ」へ平行移動する。
-        /// あわせてワールド接続ジョイントのアンカーも同量ずらし、
-        /// バランス制御の基準高さを接地後の姿勢に合わせる。
-        /// StateAuthority のみ実行（クライアントの姿勢はネットワーク同期が決める）。
-        /// </summary>
-        private void SnapRigToGround()
-        {
-            if (!_context.HasStateAuthority || _groundLayerMask == 0 ||
-                _bodyRigidbodies == null || _bodyRigidbodies.Length <= IndexRoot ||
-                _bodyRigidbodies[IndexRoot] == null)
-            {
-                return;
-            }
-
-            // リグ全体で最も低いコライダー底面（通常は足裏）を求める
-            float lowestBottomY = float.MaxValue;
-            foreach (Rigidbody rb in _bodyRigidbodies)
-            {
-                if (rb == null)
-                    continue;
-                Collider col = rb.GetComponent<Collider>();
-                if (col == null)
-                    continue;
-                lowestBottomY = Mathf.Min(lowestBottomY, col.bounds.min.y);
-            }
-
-            if (lowestBottomY >= float.MaxValue)
-                return;
-
-            // ルート直下の床面を検出（スポーン地点は床上である前提。最大10m下まで）
-            Vector3 rootPosition = _bodyRigidbodies[IndexRoot].position;
-            if (!Physics.Raycast(new Ray(rootPosition, Vector3.down), out RaycastHit hit, 10f, _groundLayerMask))
-            {
-                Debug.LogWarning("[RAGDOLL_DEBUG] SnapRigToGround: 足下に Ground が見つからないため接地補正をスキップ");
-                return;
-            }
-
-            float delta = lowestBottomY - hit.point.y;
-            if (Mathf.Abs(delta) < 0.01f)
-                return; // 既にほぼ接地
-
-            Vector3 shift = Vector3.down * delta;
-            foreach (Rigidbody rb in _bodyRigidbodies)
-            {
-                if (rb != null)
-                    rb.position += shift;
-            }
-
-            // ワールド接続ジョイントのアンカーも追従させる（configuredInWorldSpace=true 前提）
-            if (_bodyJoints != null && _bodyJoints.Length > IndexRoot && _bodyJoints[IndexRoot] != null)
-            {
-                _bodyJoints[IndexRoot].connectedAnchor += shift;
-            }
-
-            // 微調整の連続ログを避け、大きな補正のみ記録する
-            if (Mathf.Abs(delta) >= 0.05f)
-            {
-                Debug.Log($"[RAGDOLL_DEBUG] SnapRigToGround: リグを {delta:F3}m 下げて接地補正 (ground={hit.point.y:F3})");
-            }
-        }
 
         /// <summary>
         /// スポーン時にDeactivateRagdoll()と同一のドライブ配置を適用
@@ -342,6 +393,7 @@ namespace MyFolder.Scripts.Player
                 _bodyJoints[IndexRightFoot].angularXDrive = _poseOn;
                 _bodyJoints[IndexRightFoot].angularYZDrive = _poseOn;
             }
+
             if (IndexLeftFoot < _bodyJoints.Length && _bodyJoints[IndexLeftFoot] != null)
             {
                 _bodyJoints[IndexLeftFoot].angularXDrive = _poseOn;
@@ -354,13 +406,12 @@ namespace MyFolder.Scripts.Player
                 _bodyJoints[IndexRightHand].angularXDrive = _poseOn;
                 _bodyJoints[IndexRightHand].angularYZDrive = _poseOn;
             }
+
             if (IndexLeftHand < _bodyJoints.Length && _bodyJoints[IndexLeftHand] != null)
             {
                 _bodyJoints[IndexLeftHand].angularXDrive = _poseOn;
                 _bodyJoints[IndexLeftHand].angularYZDrive = _poseOn;
             }
-
-            Debug.Log("[RAGDOLL_DEBUG] Initial drives applied (same as DeactivateRagdoll layout)");
         }
 
         private void InitializeJointDrives()
@@ -368,17 +419,15 @@ namespace MyFolder.Scripts.Player
             // ダンパー比率を適用（振動防止）
             // RagdollProfile に定義済みの damperRatio を使用する。
             // damper = spring * ratio で臨界減衰に近づける。
-            float balanceDamper = _context.BalanceStrength * _context.BalanceDamperRatio;
-            float poseDamper = _context.LimbStrength * _context.PoseDamperRatio;
-            float coreDamper = _context.CoreStrength * _context.CoreDamperRatio;
+            float balanceDamper = _context.Profile.balanceStrength * _context.Profile.balanceDamperRatio;
+            float limbDamper = _context.Profile.limbStrength * _context.Profile.poseDamperRatio;
+            float coreDamper = _context.Profile.coreStrength * _context.Profile.coreDamperRatio;
 
-            _balanceOn = JointConfigurator.CreateJointDrive(_context.BalanceStrength, balanceDamper);
-            _poseOn = JointConfigurator.CreateJointDrive(_context.LimbStrength, poseDamper);
-            _coreStiffness = JointConfigurator.CreateJointDrive(_context.CoreStrength, coreDamper);
-            _driveOff = JointConfigurator.CreateJointDrive(_context.RagdollDriveOffSpring, _context.RagdollDriveOffDamper);
-
-            Debug.Log($"[RAGDOLL_FIX] InitializeJointDrives: balance={_context.BalanceStrength}/{balanceDamper:F0} " +
-                      $"pose={_context.LimbStrength}/{poseDamper:F0} core={_context.CoreStrength}/{coreDamper:F0}");
+            _balanceOn = JointConfigurator.CreateJointDrive(_context.Profile.balanceStrength, balanceDamper);
+            _poseOn = JointConfigurator.CreateJointDrive(_context.Profile.limbStrength, limbDamper);
+            _coreStiffness = JointConfigurator.CreateJointDrive(_context.Profile.coreStrength, coreDamper);
+            _driveOff = JointConfigurator.CreateJointDrive(_context.Profile.ragdollDriveOffSpring,
+                _context.Profile.ragdollDriveOffDamper);
         }
 
         private void StoreOriginalPoses()
@@ -389,162 +438,6 @@ namespace MyFolder.Scripts.Player
                 _originalRotations[i] = _bodyJoints[i] != null
                     ? _bodyJoints[i].targetRotation
                     : Quaternion.identity;
-            }
-        }
-
-        #endregion
-
-        #region Physics Update
-
-        /// <summary>
-        /// メインの物理更新ループ
-        /// moveDirection: 移動方向（WASD入力、カメラ基準）
-        /// facingDirection: 回転先方向（カメラ前方 or 移動方向、モードで切替）
-        /// </summary>
-        public void UpdatePhysics(PlayerState state, RagdollCommand command, float deltaTime)
-        {
-            // スポーン時の自動接地補正（初回の権威 tick で一度だけ実行）。
-            // コンストラクタ（Spawned 中）の時点では実行条件が揃わないため、ここで行う
-            EnsureSnappedToGround();
-
-            _wantsPunchRight = command.IsPunchingRight;
-            _wantsPunchLeft = command.IsPunchingLeft;
-            _wantsReachRight = command.IsGrabbingRight;
-            _wantsReachLeft = command.IsGrabbingLeft;
-
-            // reach終了検出: state に関わらず毎tick実行して確実にドライブを復元
-            if (!_wantsReachRight && _wasReachingRight)
-            {
-                _wasReachingRight = false;
-                RestoreArmDrives(true);
-                ResetArmTargetToOriginal(IndexUpperRightARM);
-                ResetArmTargetToOriginal(IndexLowerRightARM);
-            }
-            if (!_wantsReachLeft && _wasReachingLeft)
-            {
-                _wasReachingLeft = false;
-                RestoreArmDrives(false);
-                ResetArmTargetToOriginal(IndexUpperLeftARM);
-                ResetArmTargetToOriginal(IndexLowerLeftARM);
-            }
-
-            // 掴まり中は接地扱い: 手で何かを掴んでいる間はバランス喪失（ラグドール化）させない。
-            // ぶら下がった瞬間にラグドール化すると Reach 系ドライブが丸ごと停止し、
-            // 腕が脱力してよじ登れない（HFF 同様、懸垂中は「支持あり」とみなす）。
-            bool isGrounded = IsGrounded() || (_context != null && _context.IsAnyHandGrabbing);
-
-            // Forecast Physicsモードでクライアント側の場合:
-            // バランス判定とラグドール状態フリップはホストのCurrentStateに委ねる。
-            // クライアントで独立にバランス判定すると状態フリップ→JointDrive振動の原因になる。
-            bool isHostAuthority = _context != null && _context.HasStateAuthority;
-            bool forecastClientMode = _context != null && _context.UseForecastPhysics && !isHostAuthority;
-
-            if (forecastClientMode)
-            {
-                // ホストの状態を信頼してラグドール状態を同期
-                bool isRagdollFromHost = (state == PlayerState.Ragdoll);
-                if (isRagdollFromHost != _isRagdoll)
-                {
-                    _isRagdoll = isRagdollFromHost;
-                    if (_isRagdoll)
-                        ActivateRagdoll();
-                    else
-                        DeactivateRagdoll();
-                }
-                _balanced = !_isRagdoll;
-            }
-            else
-            {
-                _balanced = CalculateBalanceState(isGrounded, state);
-
-                // バランス状態に応じたラグドールの自動切り替え
-                if (_balanced && _isRagdoll)
-                {
-                    DeactivateRagdoll();
-                }
-                else if (!_balanced && !_isRagdoll)
-                {
-                    ActivateRagdoll();
-                }
-            }
-
-            if (!_isRagdoll)
-            {
-                UpdateStateBlending(state, deltaTime);
-                ApplyBlendedJointDrives();
-                UpdatePunchRecovery(deltaTime);
-
-                // 回転制御（facingDirectionベース = 移動方向由来の体ヨー）
-                UpdateRootRotation(command.FacingDirection, deltaTime);
-
-                // 体の上下（マウスY由来の胴体ベンド）とロール（Alt+MouseX）を常時適用。
-                // LookDirection.x = 胴体ベンド(APR MouseYAxisBody 相当, ±0.9)
-                UpdateBodyLook(command.LookDirection.x, command.BodyRoll);
-            }
-
-            // ジャンプ初速の再武装: 足の接地状態（LastFootGrounded）を再武装の合図に使う方式は
-            // 2段階とも破綻した。
-            // 1) 離陸エッジ(false化)を待つ旧方式: 足が何らかの理由で接地判定に固着すると
-            //    false エッジが二度と来ずラッチが永久に解除されない（2026-07-09 実機、バグ6）。
-            // 2) 最低滞空時間+着地ポーリング方式: 走行中の踏み出し足はジャンプ入力の瞬間も
-            //    実際にまだ地面へ接触しているため、ガード時間を過ぎても LastFootGrounded が
-            //    "残留" ではなく素で true のままになり、ボタン長押し中に誤って再武装されて
-            //    2段ジャンプが発生した（2026-07-09 実機で確認）。
-            //
-            // 足の接地状態はジャンプ回数の制御に使う信号として不適切（歩行中は常に何らかの
-            // 形で true になりうる）。本来「1回の押下につき初速は1回」はボタンの押下/解放と
-            // 一対一であるべきで、地面判定とは独立した話。そこでボタンが離された時にのみ
-            // ラッチを解除する方式に変更する。これなら足の固着状態と無関係に毎回正しく
-            // 解除されるため、上記1)2)いずれの故障モードにも構造的に陥らない。
-            //
-            // 挙動変更の注意: 長押しでのバニーホップ（着地即再ジャンプの連打）はできなくなり、
-            // ボタンを離して押し直す必要がある。これは今回のバグ報告（長押しで意図せず2段
-            // ジャンプする）が求めていた挙動そのものでもある。
-            if (!command.IsJumping)
-                _jumpVelocityApplied = false;
-
-            float movementControlMultiplier = isGrounded ? 1f : _context.AirControlMultiplier;
-
-            // 状態に基づいた物理制御（移動力・ジャンプ等）
-            switch (state)
-            {
-                case PlayerState.Idle:
-                    if (!_isRagdoll)
-                        ProcessWalking(command.MoveDirection, deltaTime);
-                    break;
-                case PlayerState.Walking:
-                    ApplyMovementForce(command.MoveDirection, movementControlMultiplier);
-                    if (!_isRagdoll)
-                        ProcessWalking(command.MoveDirection, deltaTime);
-                    break;
-                case PlayerState.Jumping:
-                    ProcessJumpingPhysics();
-                    ApplyMovementForce(command.MoveDirection, movementControlMultiplier);
-                    break;
-                case PlayerState.Reaching:
-                    // つかみ(Reaching)中も移動・歩行を許可し、物を持ち運べるようにする。
-                    // 状態評価で Grabbing は Walking より優先されるため(RagdollStateEvaluator)、
-                    // Walking と同じ移動力・歩行処理をここでも適用しないと運搬中に静止してしまう。
-                    ApplyMovementForce(command.MoveDirection, movementControlMultiplier);
-                    if (!_isRagdoll)
-                        ProcessWalking(command.MoveDirection, deltaTime);
-                    ProcessReachingPhysics(command.LookDirection);
-                    break;
-                case PlayerState.Punching:
-                    ProcessPunchingPhysics();
-                    break;
-                case PlayerState.Ragdoll:
-                    if (isGrounded)
-                        DeactivateRagdoll();
-                    break;
-            }
-
-            // ポーズオーサリングのプレビュー: 状態/入力に依らず、指定側の Reach ポーズを
-            // 最後に上書き適用する。ツール側がアセットを編集すると次tickで反映され、
-            // 重力下の実機ポーズとして即座に確認できる。
-            if (_posePreviewActive && !_isRagdoll)
-            {
-                ApplyReachPose(_posePreviewRight, 0f, 0f);
             }
         }
 
@@ -600,8 +493,6 @@ namespace MyFolder.Scripts.Player
             _stepLTimer = 0f;
             _alertLegRight = false;
             _alertLegLeft = false;
-
-            Debug.Log("[RAGDOLL_DEBUG] Ragdoll activated.");
         }
 
         private void DeactivateRagdoll()
@@ -628,12 +519,7 @@ namespace MyFolder.Scripts.Player
             _bodyJoints[IndexRoot].angularXDrive = _balanceOn;
             _bodyJoints[IndexRoot].angularYZDrive = _balanceOn;
             // 位置ドライブをゼロクリア（connectedBody=nullなので原点に引っ張られる防止）
-            JointDrive zeroLinearDrive = new JointDrive
-            {
-                positionSpring = 0f,
-                positionDamper = 0f,
-                maximumForce = 0f
-            };
+            var zeroLinearDrive = new JointDrive { positionSpring = 0f, positionDamper = 0f, maximumForce = 0f };
             _bodyJoints[IndexRoot].xDrive = zeroLinearDrive;
             _bodyJoints[IndexRoot].yDrive = zeroLinearDrive;
             _bodyJoints[IndexRoot].zDrive = zeroLinearDrive;
@@ -675,6 +561,7 @@ namespace MyFolder.Scripts.Player
                 _bodyJoints[IndexRightFoot].angularXDrive = _poseOn;
                 _bodyJoints[IndexRightFoot].angularYZDrive = _poseOn;
             }
+
             if (IndexLeftFoot < _bodyJoints.Length && _bodyJoints[IndexLeftFoot] != null)
             {
                 _bodyJoints[IndexLeftFoot].angularXDrive = _poseOn;
@@ -687,6 +574,7 @@ namespace MyFolder.Scripts.Player
                 _bodyJoints[IndexRightHand].angularXDrive = _poseOn;
                 _bodyJoints[IndexRightHand].angularYZDrive = _poseOn;
             }
+
             if (IndexLeftHand < _bodyJoints.Length && _bodyJoints[IndexLeftHand] != null)
             {
                 _bodyJoints[IndexLeftHand].angularXDrive = _poseOn;
@@ -708,19 +596,20 @@ namespace MyFolder.Scripts.Player
             switch (state)
             {
                 case PlayerState.Walking:
-                    targetBalancePriority = _context.WalkingBalancePriority;
-                    targetPoseStiffness = _context.WalkingPoseStiffnessMultiplier;
+                    targetBalancePriority = _context.Profile.walkingBalancePriority;
+                    targetPoseStiffness = _context.Profile.walkingPoseStiffnessMultiplier;
                     break;
                 case PlayerState.Idle:
                 default:
-                    targetBalancePriority = _context.IdleBalancePriority;
-                    targetPoseStiffness = _context.IdlePoseStiffnessMultiplier;
+                    targetBalancePriority = _context.Profile.idleBalancePriority;
+                    targetPoseStiffness = _context.Profile.idlePoseStiffnessMultiplier;
                     break;
             }
 
-            float blendSpeed = _context.StateBlendSpeed * deltaTime;
+            float blendSpeed = _context.Profile.stateBlendSpeed * deltaTime;
             _currentBalancePriority = Mathf.Lerp(_currentBalancePriority, targetBalancePriority, blendSpeed);
-            _currentPoseStiffnessMultiplier = Mathf.Lerp(_currentPoseStiffnessMultiplier, targetPoseStiffness, blendSpeed);
+            _currentPoseStiffnessMultiplier =
+                Mathf.Lerp(_currentPoseStiffnessMultiplier, targetPoseStiffness, blendSpeed);
         }
 
         private void ApplyBlendedJointDrives()
@@ -728,13 +617,13 @@ namespace MyFolder.Scripts.Player
             if (_bodyJoints == null || _isRagdoll)
                 return;
 
-            // 前tick値と変化がなければPhysXへの書き込みをスキップ
+            // 前tick値と変化がなければPhysXへの書き込みをスキップ（BN-2対策）
             if (Mathf.Abs(_currentPoseStiffnessMultiplier - _lastAppliedPoseMultiplier) < 0.001f)
                 return;
             _lastAppliedPoseMultiplier = _currentPoseStiffnessMultiplier;
 
-            float adjustedLimbStrength = _context.LimbStrength * _currentPoseStiffnessMultiplier;
-            float adjustedPoseDamper = adjustedLimbStrength * _context.PoseDamperRatio;
+            float adjustedLimbStrength = _context.Profile.limbStrength * _currentPoseStiffnessMultiplier;
+            float adjustedPoseDamper = adjustedLimbStrength * _context.Profile.poseDamperRatio;
             JointDrive adjustedPoseOn = JointConfigurator.CreateJointDrive(adjustedLimbStrength, adjustedPoseDamper);
             ApplyJointDrive(IndexUpperRightARM, adjustedPoseOn);
             ApplyJointDrive(IndexLowerRightARM, adjustedPoseOn);
@@ -758,31 +647,6 @@ namespace MyFolder.Scripts.Player
                 _bodyJoints[index].angularXDrive = drive;
                 _bodyJoints[index].angularYZDrive = drive;
             }
-        }
-
-        #endregion
-
-        #region Root Rotation
-
-        /// <summary>
-        /// ルートの回転制御（facingDirectionベース）
-        /// facingDirection が zero の場合は向き維持（移動方向モードでidle時）
-        /// </summary>
-        private void UpdateRootRotation(Vector3 facingDirection, float deltaTime)
-        {
-            if (_bodyJoints == null || !_bodyJoints[IndexRoot])
-                return;
-
-            // facingDirection が zero → 向き維持（移動方向モードでidle時）
-            if (facingDirection.sqrMagnitude < 0.01f)
-                return;
-
-            Quaternion lookRotation = Quaternion.LookRotation(facingDirection.normalized, Vector3.up);
-            _bodyJoints[IndexRoot].targetRotation = Quaternion.Slerp(
-                _bodyJoints[IndexRoot].targetRotation,
-                Quaternion.Inverse(lookRotation),
-                _context.TurnSpeed * deltaTime
-            );
         }
 
         #endregion
@@ -828,7 +692,7 @@ namespace MyFolder.Scripts.Player
                 controlMultiplier);
 
             // 入力から実際の速度変化までの遅延（1.0f:ロボット的、0.8f:バランスポイント、0.3f:氷の上を滑るような感触）
-            rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, targetVel, _context.MovementVelocityLerp);
+            rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, targetVel, _context.Profile.movementVelocityLerp);
         }
 
         /// <summary>
@@ -840,6 +704,10 @@ namespace MyFolder.Scripts.Player
         {
             // 前進/後退の判定: ルートの前方ベクトルと移動方向の内積で決定
             // APRController L418-536 の forwardIsCameraDirection モードを拡張
+            // この2つは tick をまたいで持ち越さない（毎回ここで決まる）のでローカル変数。
+            // ステップサイクルを保持する _stepRight/_stepLeft/_stepRTimer/_stepLTimer/_alertLeg* とは性質が違う。
+            bool walkForward = false;
+            bool walkBackward = false;
             if (moveDirection.sqrMagnitude > 0.01f)
             {
                 Vector3 rootForward = _bodyRigidbodies[IndexRoot].transform.forward;
@@ -848,23 +716,16 @@ namespace MyFolder.Scripts.Player
 
                 if (dot >= 0f)
                 {
-                    _walkForward = true;
-                    _walkBackward = false;
+                    walkForward = true;
                 }
                 else
                 {
-                    _walkForward = false;
-                    _walkBackward = true;
+                    walkBackward = true;
                 }
-            }
-            else
-            {
-                _walkForward = false;
-                _walkBackward = false;
             }
 
             // APRController L355-363: 移動していない時はステップ状態をリセット
-            if (!_walkForward && !_walkBackward)
+            if (!walkForward && !walkBackward)
             {
                 _stepRight = false;
                 _stepLeft = false;
@@ -874,11 +735,16 @@ namespace MyFolder.Scripts.Player
                 _alertLegLeft = false;
             }
 
+            // 足のZ座標は以下の4判定で参照するが、その間に足自体は動かない（変わるのは bool フラグだけ）。
+            // GameObject.transform → Transform.position のネイティブ取得を8回から2回に減らす。
+            float rightFootZ = _bodyParts[IndexRightFoot].transform.position.z;
+            float leftFootZ = _bodyParts[IndexLeftFoot].transform.position.z;
+
             // APRController L900-917: 前進時 — 後ろにある足をステップさせる
-            if (_walkForward)
+            if (walkForward)
             {
                 // right leg
-                if (_bodyParts[IndexRightFoot].transform.position.z < _bodyParts[IndexLeftFoot].transform.position.z && !_stepLeft && !_alertLegRight)
+                if (rightFootZ < leftFootZ && !_stepLeft && !_alertLegRight)
                 {
                     _stepRight = true;
                     _alertLegRight = true;
@@ -886,7 +752,7 @@ namespace MyFolder.Scripts.Player
                 }
 
                 // left leg
-                if (_bodyParts[IndexRightFoot].transform.position.z > _bodyParts[IndexLeftFoot].transform.position.z && !_stepRight && !_alertLegLeft)
+                if (rightFootZ > leftFootZ && !_stepRight && !_alertLegLeft)
                 {
                     _stepLeft = true;
                     _alertLegLeft = true;
@@ -895,10 +761,10 @@ namespace MyFolder.Scripts.Player
             }
 
             // APRController L919-936: 後退時 — 前にある足をステップさせる（前後逆）
-            if (_walkBackward)
+            if (walkBackward)
             {
                 // right leg
-                if (_bodyParts[IndexRightFoot].transform.position.z > _bodyParts[IndexLeftFoot].transform.position.z && !_stepLeft && !_alertLegRight)
+                if (rightFootZ > leftFootZ && !_stepLeft && !_alertLegRight)
                 {
                     _stepRight = true;
                     _alertLegRight = true;
@@ -906,7 +772,7 @@ namespace MyFolder.Scripts.Player
                 }
 
                 // left leg
-                if (_bodyParts[IndexRightFoot].transform.position.z < _bodyParts[IndexLeftFoot].transform.position.z && !_stepRight && !_alertLegLeft)
+                if (rightFootZ < leftFootZ && !_stepRight && !_alertLegLeft)
                 {
                     _stepLeft = true;
                     _alertLegLeft = true;
@@ -914,107 +780,105 @@ namespace MyFolder.Scripts.Player
                 }
             }
 
-            float stepHeight = _context.StepHeight;
-            float feetForce = _context.FeetMountForce;
-            float stepDuration = _context.StepDuration;
+            float stepHeight = _context.Profile.stepHeight;
+            float feetForce = _context.Profile.feetMountForce;
+            float stepDuration = _context.Profile.stepDuration;
             float walkInputAmount = CalculateWalkInputAmount(moveDirection);
             float stepDeltaTime = deltaTime * walkInputAmount;
             float scaledStepHeight = stepHeight * walkInputAmount;
 
-            // APRController L939-975: Step right
-            if (_stepRight)
+            // 左右のステップは、脚のインデックス・タイマー・アイドル復帰の Lerp 速度が違うだけで
+            // 手順も係数も同一。ローカル関数に畳んで、片側だけ直す事故を防ぐ。
+            // 上の共有ローカル（walkForward / scaledStepHeight 等）はクロージャで捕捉する。
+            //
+            // 【アイドル復帰の Lerp 速度が左右非対称なことについて】
+            //   右 = 8f / 17f、左 = 7f / 18f。これは元アセット APRController.cs の
+            //   L979-980 / L1029-1030 が最初から非対称で、それを忠実に移植したもの。
+            //   このプロジェクトでの調整ミスでも転記ミスでもない（2026-08-08 に原本と照合して確認）。
+            //   [※未確認] 上流の作者が意図したのか単なる打ち間違いかは不明。
+            //   対称化すると歩行の見た目が変わるうえ原本との差分が増えるため、値は変えていない。
+            //   変えるなら、差が体感できるかを実測してから判断すること。
+            void ProcessStepSide(
+                ref bool isStepping,
+                ref float stepTimer,
+                ref bool nextSideStep,
+                int upperLeg,
+                int lowerLeg,
+                int oppositeUpperLeg,
+                int steppingFoot,
+                float idleLerpUpper,
+                float idleLerpLower)
             {
-                _stepRTimer += stepDeltaTime;
-
-                // Right foot force down
-                AddFeetDownForce(IndexRightFoot, feetForce, deltaTime);
-
-                // walk simulation
-                if (_walkForward)
+                if (isStepping)
                 {
-                    _bodyJoints[IndexUpperRightLeg].targetRotation = new Quaternion(_bodyJoints[IndexUpperRightLeg].targetRotation.x + 0.09f * scaledStepHeight, _bodyJoints[IndexUpperRightLeg].targetRotation.y, _bodyJoints[IndexUpperRightLeg].targetRotation.z, _bodyJoints[IndexUpperRightLeg].targetRotation.w);
-                    _bodyJoints[IndexLowerRightLeg].targetRotation = new Quaternion(_bodyJoints[IndexLowerRightLeg].targetRotation.x - 0.09f * scaledStepHeight * 2, _bodyJoints[IndexLowerRightLeg].targetRotation.y, _bodyJoints[IndexLowerRightLeg].targetRotation.z, _bodyJoints[IndexLowerRightLeg].targetRotation.w);
+                    stepTimer += stepDeltaTime;
 
-                    _bodyJoints[IndexUpperLeftLeg].targetRotation = new Quaternion(_bodyJoints[IndexUpperLeftLeg].targetRotation.x - 0.12f * scaledStepHeight / 2, _bodyJoints[IndexUpperLeftLeg].targetRotation.y, _bodyJoints[IndexUpperLeftLeg].targetRotation.z, _bodyJoints[IndexUpperLeftLeg].targetRotation.w);
-                }
+                    // 踏み出す側の足を下へ押さえる
+                    AddFeetDownForce(steppingFoot, feetForce, deltaTime);
 
-                if (_walkBackward)
-                {
-                    _bodyJoints[IndexLowerRightLeg].targetRotation = new Quaternion(_bodyJoints[IndexLowerRightLeg].targetRotation.x - 0.07f * scaledStepHeight * 2, _bodyJoints[IndexLowerRightLeg].targetRotation.y, _bodyJoints[IndexLowerRightLeg].targetRotation.z, _bodyJoints[IndexLowerRightLeg].targetRotation.w);
-
-                    _bodyJoints[IndexUpperLeftLeg].targetRotation = new Quaternion(_bodyJoints[IndexUpperLeftLeg].targetRotation.x + 0.02f * scaledStepHeight / 2, _bodyJoints[IndexUpperLeftLeg].targetRotation.y, _bodyJoints[IndexUpperLeftLeg].targetRotation.z, _bodyJoints[IndexUpperLeftLeg].targetRotation.w);
-                }
-
-                // step duration
-                if (_stepRTimer > stepDuration)
-                {
-                    _stepRTimer = 0;
-                    _stepRight = false;
-
-                    if (_walkForward || _walkBackward)
+                    if (walkForward)
                     {
-                        _stepLeft = true;
+                        AddTargetPitch(upperLeg, 0.09f * scaledStepHeight);
+                        AddTargetPitch(lowerLeg, -0.09f * scaledStepHeight * 2);
+                        AddTargetPitch(oppositeUpperLeg, -0.12f * scaledStepHeight / 2);
+                    }
+
+                    if (walkBackward)
+                    {
+                        AddTargetPitch(lowerLeg, -0.07f * scaledStepHeight * 2);
+                        AddTargetPitch(oppositeUpperLeg, 0.02f * scaledStepHeight / 2);
+                    }
+
+                    // ステップ時間を使い切ったら反対側へ渡す
+                    if (stepTimer > stepDuration)
+                    {
+                        stepTimer = 0;
+                        isStepping = false;
+
+                        if (walkForward || walkBackward)
+                        {
+                            nextSideStep = true;
+                        }
                     }
                 }
-            }
-            else
-            {
-                // reset to idle (APRController L977-984)
-                _bodyJoints[IndexUpperRightLeg].targetRotation = Quaternion.Lerp(_bodyJoints[IndexUpperRightLeg].targetRotation, _originalRotations[IndexUpperRightLeg], 8f * deltaTime);
-                _bodyJoints[IndexLowerRightLeg].targetRotation = Quaternion.Lerp(_bodyJoints[IndexLowerRightLeg].targetRotation, _originalRotations[IndexLowerRightLeg], 17f * deltaTime);
-
-                // feet force down
-                AddFeetDownForce(IndexRightFoot, feetForce, deltaTime);
-                AddFeetDownForce(IndexLeftFoot, feetForce, deltaTime);
-            }
-
-
-            // APRController L989-1035: Step left
-            if (_stepLeft)
-            {
-                _stepLTimer += stepDeltaTime;
-
-                // Left foot force down
-                AddFeetDownForce(IndexLeftFoot, feetForce, deltaTime);
-
-                // walk simulation
-                if (_walkForward)
+                else
                 {
-                    _bodyJoints[IndexUpperLeftLeg].targetRotation = new Quaternion(_bodyJoints[IndexUpperLeftLeg].targetRotation.x + 0.09f * scaledStepHeight, _bodyJoints[IndexUpperLeftLeg].targetRotation.y, _bodyJoints[IndexUpperLeftLeg].targetRotation.z, _bodyJoints[IndexUpperLeftLeg].targetRotation.w);
-                    _bodyJoints[IndexLowerLeftLeg].targetRotation = new Quaternion(_bodyJoints[IndexLowerLeftLeg].targetRotation.x - 0.09f * scaledStepHeight * 2, _bodyJoints[IndexLowerLeftLeg].targetRotation.y, _bodyJoints[IndexLowerLeftLeg].targetRotation.z, _bodyJoints[IndexLowerLeftLeg].targetRotation.w);
+                    // reset to idle
+                    _bodyJoints[upperLeg].targetRotation = Quaternion.Lerp(
+                        _bodyJoints[upperLeg].targetRotation, _originalRotations[upperLeg], idleLerpUpper * deltaTime);
+                    _bodyJoints[lowerLeg].targetRotation = Quaternion.Lerp(
+                        _bodyJoints[lowerLeg].targetRotation, _originalRotations[lowerLeg], idleLerpLower * deltaTime);
 
-                    _bodyJoints[IndexUpperRightLeg].targetRotation = new Quaternion(_bodyJoints[IndexUpperRightLeg].targetRotation.x - 0.12f * scaledStepHeight / 2, _bodyJoints[IndexUpperRightLeg].targetRotation.y, _bodyJoints[IndexUpperRightLeg].targetRotation.z, _bodyJoints[IndexUpperRightLeg].targetRotation.w);
-                }
-
-                if (_walkBackward)
-                {
-                    _bodyJoints[IndexLowerLeftLeg].targetRotation = new Quaternion(_bodyJoints[IndexLowerLeftLeg].targetRotation.x - 0.07f * scaledStepHeight * 2, _bodyJoints[IndexLowerLeftLeg].targetRotation.y, _bodyJoints[IndexLowerLeftLeg].targetRotation.z, _bodyJoints[IndexLowerLeftLeg].targetRotation.w);
-
-                    _bodyJoints[IndexUpperRightLeg].targetRotation = new Quaternion(_bodyJoints[IndexUpperRightLeg].targetRotation.x + 0.02f * scaledStepHeight / 2, _bodyJoints[IndexUpperRightLeg].targetRotation.y, _bodyJoints[IndexUpperRightLeg].targetRotation.z, _bodyJoints[IndexUpperRightLeg].targetRotation.w);
-                }
-
-                // Step duration
-                if (_stepLTimer > stepDuration)
-                {
-                    _stepLTimer = 0;
-                    _stepLeft = false;
-
-                    if (_walkForward || _walkBackward)
-                    {
-                        _stepRight = true;
-                    }
+                    // feet force down（非ステップ側では両足に掛ける。元実装どおり）
+                    AddFeetDownForce(IndexRightFoot, feetForce, deltaTime);
+                    AddFeetDownForce(IndexLeftFoot, feetForce, deltaTime);
                 }
             }
-            else
-            {
-                // reset to idle (APRController L1027-1034)
-                _bodyJoints[IndexUpperLeftLeg].targetRotation = Quaternion.Lerp(_bodyJoints[IndexUpperLeftLeg].targetRotation, _originalRotations[IndexUpperLeftLeg], 7f * deltaTime);
-                _bodyJoints[IndexLowerLeftLeg].targetRotation = Quaternion.Lerp(_bodyJoints[IndexLowerLeftLeg].targetRotation, _originalRotations[IndexLowerLeftLeg], 18f * deltaTime);
 
-                // feet force down
-                AddFeetDownForce(IndexRightFoot, feetForce, deltaTime);
-                AddFeetDownForce(IndexLeftFoot, feetForce, deltaTime);
-            }
+            // APRController L939-984: Step right
+            ProcessStepSide(
+                ref _stepRight, ref _stepRTimer, ref _stepLeft,
+                IndexUpperRightLeg, IndexLowerRightLeg, IndexUpperLeftLeg, IndexRightFoot,
+                idleLerpUpper: 8f, idleLerpLower: 17f);
+
+            // APRController L989-1034: Step left
+            ProcessStepSide(
+                ref _stepLeft, ref _stepLTimer, ref _stepRight,
+                IndexUpperLeftLeg, IndexLowerLeftLeg, IndexUpperRightLeg, IndexLeftFoot,
+                idleLerpUpper: 7f, idleLerpLower: 18f);
+        }
+
+        /// <summary>
+        /// ジョイントの targetRotation の x 成分（ピッチ相当）だけを加算する。
+        ///
+        /// 元は 1行200文字超の <c>new Quaternion(joint.targetRotation.x + delta, joint.targetRotation.y, ...)</c>
+        /// が並んでおり、同じ targetRotation を1文の中で4回読み直していた。
+        /// 意味は変えずに、読める長さと1回の読み取りに落としている。
+        /// </summary>
+        private void AddTargetPitch(int jointIndex, float delta)
+        {
+            Quaternion target = _bodyJoints[jointIndex].targetRotation;
+            _bodyJoints[jointIndex].targetRotation = new Quaternion(target.x + delta, target.y, target.z, target.w);
         }
 
         /// <summary>
@@ -1121,7 +985,7 @@ namespace MyFolder.Scripts.Player
                 if (rigidBody.linearVelocity.y > AscendingVelocityGuard)
                     return;
 
-                var v3 = rigidBody.transform.up * _context.JumpForce;
+                var v3 = rigidBody.transform.up * _context.Profile.jumpForce;
                 v3.x = rigidBody.linearVelocity.x;
                 v3.z = rigidBody.linearVelocity.z;
                 rigidBody.linearVelocity = v3;
@@ -1153,13 +1017,13 @@ namespace MyFolder.Scripts.Player
                 return;
 
             // 上腕ベース角: 8f = パンチrelease上腕X = 前方90度相当（当方リグ検証済み規約）
-            float upperArmBasePitch = _context.ReachUpperArmBasePitch;
+            float upperArmBasePitch = _context.Profile.reachUpperArmBasePitch;
             // 腕の上下: APR MouseYAxisArms(LookDirection.y) で base から振る
-            float armInputLimit = Mathf.Max(0f, _context.ReachArmInputLimit);
-            float upperArmPitchPerUnit = _context.ReachUpperArmPitchPerUnit;
-            float upperArmMinPitch = _context.ReachUpperArmMinPitch;
-            float upperArmMaxPitch = _context.ReachUpperArmMaxPitch;
-            float lowerArmPitch = _context.ReachLowerArmPitch;
+            float armInputLimit = Mathf.Max(0f, _context.Profile.reachArmInputLimit);
+            float upperArmPitchPerUnit = _context.Profile.reachUpperArmPitchPerUnit;
+            float upperArmMinPitch = _context.Profile.reachUpperArmMinPitch;
+            float upperArmMaxPitch = _context.Profile.reachUpperArmMaxPitch;
+            float lowerArmPitch = _context.Profile.reachLowerArmPitch;
 
             float armReach = Mathf.Clamp(lookDirection.y, -armInputLimit, armInputLimit);
             float upperArmPitch = Mathf.Clamp(
@@ -1177,6 +1041,7 @@ namespace MyFolder.Scripts.Player
                 _wasReachingRight = true;
                 ApplyReachPose(true, upperArmPitch, lowerArmPitch, armSwingDegrees);
             }
+
             if (_wantsReachLeft)
             {
                 _wasReachingLeft = true;
@@ -1198,24 +1063,26 @@ namespace MyFolder.Scripts.Player
 
             // Reach中は現在の profile 値から毎回 drive を作る。Play中の tuning と有限 maximumForce を即反映するため。
             JointDrive upperReachDrive = JointConfigurator.CreateJointDrive(
-                _context.ReachUpperArmJointSpring,
-                _context.ReachUpperArmJointDamper,
-                _context.ReachUpperArmJointMaxForce);
+                _context.Profile.reachUpperArmJointSpring,
+                _context.Profile.reachUpperArmJointDamper,
+                _context.Profile.reachUpperArmJointMaxForce);
             JointDrive lowerReachDrive = JointConfigurator.CreateJointDrive(
-                _context.ReachLowerArmJointSpring,
-                _context.ReachLowerArmJointDamper,
-                _context.ReachLowerArmJointMaxForce);
+                _context.Profile.reachLowerArmJointSpring,
+                _context.Profile.reachLowerArmJointDamper,
+                _context.Profile.reachLowerArmJointMaxForce);
 
             if (upperArmIndex < _bodyJoints.Length && _bodyJoints[upperArmIndex] != null)
             {
                 _bodyJoints[upperArmIndex].angularXDrive = upperReachDrive;
                 _bodyJoints[upperArmIndex].angularYZDrive = upperReachDrive;
             }
+
             if (lowerArmIndex < _bodyJoints.Length && _bodyJoints[lowerArmIndex] != null)
             {
                 _bodyJoints[lowerArmIndex].angularXDrive = lowerReachDrive;
                 _bodyJoints[lowerArmIndex].angularYZDrive = lowerReachDrive;
             }
+
             if (upperArmIndex < _bodyJoints.Length && _bodyJoints[upperArmIndex] != null)
             {
                 // swing のミラーは行わない（左右のアセットデルタが各側の軸を持つため自動で正しくなる）
@@ -1310,6 +1177,7 @@ namespace MyFolder.Scripts.Player
                 _bodyJoints[upperArmIndex].angularXDrive = _poseOn;
                 _bodyJoints[upperArmIndex].angularYZDrive = _poseOn;
             }
+
             if (lowerArmIndex < _bodyJoints.Length && _bodyJoints[lowerArmIndex] != null)
             {
                 _bodyJoints[lowerArmIndex].angularXDrive = _poseOn;
@@ -1350,7 +1218,6 @@ namespace MyFolder.Scripts.Player
                 _punchingLeft = false;
                 ApplyPunchRelease(false);
             }
-
         }
 
         private void ApplyPunchWindup(bool isRight)
@@ -1397,17 +1264,18 @@ namespace MyFolder.Scripts.Player
                     Vector3 forward = _bodyRigidbodies[IndexRoot] != null
                         ? _bodyRigidbodies[IndexRoot].transform.forward
                         : Vector3.forward;
-                    _bodyRigidbodies[lowerArmIndex].AddForce(forward * _context.PunchImpulse, ForceMode.Impulse);
+                    _bodyRigidbodies[lowerArmIndex]
+                        .AddForce(forward * _context.Profile.punchImpulse, ForceMode.Impulse);
                 }
             }
 
             if (isRight)
             {
-                _rightPunchRecoveryDelay = _context.PunchRecoveryDelaySeconds;
+                _rightPunchRecoveryDelay = _context.Profile.punchRecoveryDelaySeconds;
             }
             else
             {
-                _leftPunchRecoveryDelay = _context.PunchRecoveryDelaySeconds;
+                _leftPunchRecoveryDelay = _context.Profile.punchRecoveryDelaySeconds;
             }
         }
 
@@ -1436,7 +1304,7 @@ namespace MyFolder.Scripts.Player
                 _bodyJoints[jointIndex].targetRotation = Quaternion.Lerp(
                     _bodyJoints[jointIndex].targetRotation,
                     _originalRotations[jointIndex],
-                    _context.PunchRecoveryLerpSpeed * deltaTime
+                    _context.Profile.punchRecoveryLerpSpeed * deltaTime
                 );
             }
         }
@@ -1569,7 +1437,7 @@ namespace MyFolder.Scripts.Player
             }
 
             Ray ray = new Ray(_bodyParts[IndexRoot].transform.position, Vector3.down);
-            bool raycastHit = Physics.Raycast(ray, _context.BalanceHeight, _groundLayerMask);
+            bool raycastHit = Physics.Raycast(ray, _context.Profile.balanceHeight, _groundLayerMask);
             LastRaycastHit = raycastHit;
 
             return raycastHit;
@@ -1592,9 +1460,6 @@ namespace MyFolder.Scripts.Player
             _currentBalanceState = CalculateDetailedBalanceState();
 #endif
 
-            float velocity = _bodyRigidbodies[IndexRoot].linearVelocity.magnitude;
-            bool isLowVelocity = velocity < 1f;
-
             if (_balanced)
             {
                 // 空中(!isGrounded)ではバランス喪失させない（2026-07-03 変更）。
@@ -1605,6 +1470,9 @@ namespace MyFolder.Scripts.Player
             }
             else
             {
+                // 速度判定はこの分岐でしか使わないので、平方根計算もここまで遅らせる。
+                // （sqrMagnitude 化は境界の丸めが変わるため、あえて magnitude のまま）
+                bool isLowVelocity = _bodyRigidbodies[IndexRoot].linearVelocity.magnitude < 1f;
                 return isGrounded && isLowVelocity && state != PlayerState.Ragdoll;
             }
         }
@@ -1636,17 +1504,12 @@ namespace MyFolder.Scripts.Player
             }
         }
 
-        public void SetFootGroundedInfo(bool isLeftFoot, bool isGrounded, bool anyFootGrounded)
+        /// <summary>
+        /// 物理側が使うのは「どちらかの足が接地しているか」だけ。
+        /// 左右別の接地は RagdollController の [Networked] IsLeftFootGrounded / IsRightFootGrounded が持つ。
+        /// </summary>
+        public void SetFootGroundedInfo(bool anyFootGrounded)
         {
-            if (isLeftFoot)
-            {
-                _isLeftFootGrounded = isGrounded;
-            }
-            else
-            {
-                _isRightFootGrounded = isGrounded;
-            }
-
             _isAnyFootGrounded = anyFootGrounded;
         }
 

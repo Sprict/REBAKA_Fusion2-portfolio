@@ -1,4 +1,4 @@
-namespace MyFolder.Editor.Preflight
+namespace Rebaka.Editor.Preflight
 {
     /// <summary>
     /// チェック#5: NetworkProjectConfigBackup.json（MPPM用）の鮮度。

@@ -1,6 +1,6 @@
 {
     "name": "MyProject.EditModeTests",
-    "rootNamespace": "",
+    "rootNamespace": "Rebaka.Tests.EditMode",
     "references": [
         "MyProject.Scripts",
         "Unity.InputSystem"

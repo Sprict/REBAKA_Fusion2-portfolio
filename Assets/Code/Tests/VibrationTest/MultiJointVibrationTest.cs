@@ -4,11 +4,11 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Tests.Vibration
+namespace Rebaka.Tests.Vibration
 {
     /// <summary>
     /// 多関節ラグドール（5セグメント連鎖）で複合要因の共鳴振動を再現・検証するテスト。
-    ///
+    /// 
     /// テスト構成:
     ///   M1: 全要因ON（修正前の状態を再現）
     ///       - ダンパー=0, JointDrive+AddForce同時, バランスフリップ, 予測先読み

@@ -1,9 +1,9 @@
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// Forecast Physicsモード用のクライアントプロキシ戦略。
     /// ジョイントドライブを維持し、物理シミュレーションを全クライアントで実行する。
-    /// Legacy/HybridStrategyと異なり、ドライブの無効化やkinematic化を行わない。
+    /// HybridStrategyと異なり、ドライブの無効化やkinematic化を行わない。
     /// </summary>
     internal sealed class ForecastClientProxyModeStrategy : IClientProxyModeStrategy
     {

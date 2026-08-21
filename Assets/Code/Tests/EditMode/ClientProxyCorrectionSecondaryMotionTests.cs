@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using MyFolder.Scripts.Player;
+using Rebaka.Player;
 using NUnit.Framework;
 using UnityEngine;
 
-namespace MyFolder.Tests.EditMode
+namespace Rebaka.Tests.EditMode
 {
     public sealed class ClientProxyCorrectionSecondaryMotionTests
     {

@@ -1,5 +1,5 @@
 using UnityEngine;
-using MyFolder.Scripts.Network;
+using Rebaka.Network;
 
 public static class AutoHostAndDiagnose
 {

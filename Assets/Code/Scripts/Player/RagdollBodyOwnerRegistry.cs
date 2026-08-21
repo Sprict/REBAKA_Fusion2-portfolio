@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Fusion;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// ボディパーツの Rigidbody → 所有プレイヤーの NetworkObject の対応表。
@@ -16,7 +16,7 @@ namespace MyFolder.Scripts.Player
     {
         private static readonly Dictionary<Rigidbody, NetworkObject> Map = new Dictionary<Rigidbody, NetworkObject>();
 
-        /// <summary>スポーン時（階層が切り離される前）に呼ぶこと。</summary>
+        /// <summary>スポーン時（階層が切り離される前）にパーツ→所有者の対応を登録（掴み判定の自他識別用）</summary>
         public static void Register(Rigidbody[] rigidbodies, NetworkObject owner)
         {
             if (rigidbodies == null || owner == null) return;

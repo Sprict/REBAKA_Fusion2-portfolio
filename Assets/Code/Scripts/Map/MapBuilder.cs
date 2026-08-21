@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// 確定レイアウトを各クライアントでローカル Instantiate する Unity 層（段階 B）。

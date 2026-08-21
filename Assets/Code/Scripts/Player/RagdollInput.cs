@@ -1,8 +1,8 @@
-using UnityEngine;
-using MyFolder.Scripts.Network;
-using MyFolder.Scripts.Utils;
+﻿using UnityEngine;
+using Rebaka.Network;
+using Rebaka.Utils;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// プレイヤーの入力処理を担当するクラス
@@ -42,8 +42,8 @@ namespace MyFolder.Scripts.Player
             // Clamp は範囲保険。LookDirection.x→胴体ベンド、LookDirection.y→腕リーチ、BodyRoll→胴体ロールへ物理側で消費。
             // 腕リーチの範囲保険は Profile 実効値でクランプする（定数固定だと Profile で
             // reachArmInputLimit を上げても、ここで握り潰されてよじ登り用の腕下げが効かない）。
-            float armReachLimit = _physicsContext != null
-                ? Mathf.Max(0f, _physicsContext.ReachArmInputLimit)
+            float armReachLimit = _physicsContext?.Profile != null
+                ? Mathf.Max(0f, _physicsContext.Profile.reachArmInputLimit)
                 : RagdollProfile.DefaultReachArmInputLimit;
             _currentCommand.LookDirection = new Vector2(
                 Mathf.Clamp(inputData.bodyDir.x, -RagdollProfile.DefaultBodyBendInputLimit, RagdollProfile.DefaultBodyBendInputLimit),

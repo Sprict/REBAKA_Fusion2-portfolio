@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player.Posing
+namespace Rebaka.Player.Posing
 {
     /// <summary>
     /// 1アクション分（例: Reach の決めポーズ、Punch の引きポーズ）のターゲットポーズ。

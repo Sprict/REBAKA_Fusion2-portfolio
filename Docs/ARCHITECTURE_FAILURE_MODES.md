@@ -54,6 +54,10 @@ Host Migrationと試合状態の復元は未実装です。ホストが終了し
 
 公開リポジトリは応募向けのコード抜粋です。シーン、Prefab、Photonのアプリ設定、実行時に使用するProfileアセットの一部は含めていません。そのため、公開コードだけでビルドを再現することは目的としていません。
 
+### Preflightの確認範囲はEditorの統合前判定に限られる
+
+Production / MapのPreflight profileは、scene path、Build Settings、配線、scene配置objectの境界を確認するEditorツールです。2026-08-21に両profileと誤ったactive scene、additive scene、Prefab Stageをユーザー本人が確認しましたが、これは2-client通信、長時間Play Mode、またはゲーム全体のプレイアビリティを示すものではありません。
+
 ## 未検証
 
 ### 3〜4人同時接続時の負荷

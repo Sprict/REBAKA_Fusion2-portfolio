@@ -4,7 +4,7 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Tests.Vibration
+namespace Rebaka.Tests.Vibration
 {
     /// <summary>
     /// ネットワーク不要のスタンドアロン振動要因テストハーネス。

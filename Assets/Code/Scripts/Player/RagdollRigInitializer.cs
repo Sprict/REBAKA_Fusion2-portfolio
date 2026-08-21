@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     internal sealed class RagdollRigInitializer
     {
@@ -77,6 +77,10 @@ namespace MyFolder.Scripts.Player
             }
         }
 
+        /// <summary>
+        /// 同一ラグドール内のコライダー間衝突を無効化（振動防止）
+        /// </summary>
+        /// <param name="colliders"></param>
         public void SetupCollisionIgnores(Collider[] colliders)
         {
             if (colliders == null)

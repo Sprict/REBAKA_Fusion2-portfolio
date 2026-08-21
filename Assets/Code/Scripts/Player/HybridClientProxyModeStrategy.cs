@@ -1,7 +1,12 @@
 using System;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
+    /// <summary>
+    /// Hybrid モードのクライアント初期化戦略。
+    /// Spawn 時にプロキシ表示をいったん隠し、JointDrive は維持したまま、
+    /// Root の同期手段が利用可能かを記録・検査する。
+    /// </summary>
     internal sealed class HybridClientProxyModeStrategy : IClientProxyModeStrategy
     {
         private readonly IClientProxyRigAccess _rigAccess;

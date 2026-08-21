@@ -1,13 +1,13 @@
 using System.Reflection;
-using MyFolder.Scripts.Player;
-using MyFolder.Scripts.Network;
-using MyFolder.Scripts.Player.Posing;
-using MyFolder.Scripts.Camera;
+using Rebaka.Player;
+using Rebaka.Network;
+using Rebaka.Player.Posing;
+using Rebaka.Camera;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 
-namespace MyFolder.Tests.EditMode
+namespace Rebaka.Tests.EditMode
 {
     public sealed class RagdollProfileTuningTests
     {
@@ -64,17 +64,43 @@ namespace MyFolder.Tests.EditMode
             Assert.That(profile.crouchSpeedMultiplier, Is.InRange(0f, 1f));
         }
 
+        /// <summary>
+        /// 物理層がチューニング値へ到達できることを守るテスト。
+        ///
+        /// 2026-08-07 以前は IRagdollPhysicsContext が値ごとに専用プロパティを持っていたため、
+        /// interface 上の存在を検査していた。現在はチューニング値を RagdollProfile 経由で
+        /// 渡すため、検査対象を「契約が Profile を公開していること」＋
+        /// 「Profile に該当フィールドがあること」へ移した。守っている性質は同じ。
+        /// </summary>
         [Test]
-        public void PhysicsContext_ExposesReachJointMaxForceProperties()
+        public void PhysicsContext_ExposesProfile()
         {
-            Assert.That(typeof(IRagdollPhysicsContext).GetProperty("ReachUpperArmJointMaxForce"), Is.Not.Null);
-            Assert.That(typeof(IRagdollPhysicsContext).GetProperty("ReachLowerArmJointMaxForce"), Is.Not.Null);
+            Assert.That(typeof(IRagdollPhysicsContext).GetProperty("Profile"), Is.Not.Null,
+                "物理層はチューニング値を Profile 経由で読む。この経路が消えると全パラメータが届かなくなる。");
         }
 
         [Test]
-        public void PhysicsContext_ExposesAirControlMultiplier()
+        public void Profile_ExposesReachJointMaxForceFields()
         {
-            Assert.That(typeof(IRagdollPhysicsContext).GetProperty("AirControlMultiplier"), Is.Not.Null);
+            Assert.That(typeof(RagdollProfile).GetField("reachUpperArmJointMaxForce"), Is.Not.Null);
+            Assert.That(typeof(RagdollProfile).GetField("reachLowerArmJointMaxForce"), Is.Not.Null);
+        }
+
+        [Test]
+        public void Profile_ExposesAirControlMultiplier()
+        {
+            Assert.That(typeof(RagdollProfile).GetField("airControlMultiplier"), Is.Not.Null);
+        }
+
+        /// <summary>
+        /// MoveSpeed だけは Profile 直読みで代用できない（Dash/Crouch 倍率を掛けた計算値）。
+        /// 契約から消すと、コンパイルは通ったままダッシュとしゃがみが無効になる。
+        /// </summary>
+        [Test]
+        public void PhysicsContext_KeepsComputedMoveSpeed()
+        {
+            Assert.That(typeof(IRagdollPhysicsContext).GetProperty("MoveSpeed"), Is.Not.Null,
+                "MoveSpeed は profile.moveSpeed × Dash倍率 × Crouch倍率 の計算値であり、Profile 直読みでは代用できない。");
         }
 
         [Test]
@@ -124,15 +150,13 @@ namespace MyFolder.Tests.EditMode
         [Test]
         public void ApplyReachPose_RebuildsReachDrivesFromCurrentContextValues()
         {
-            var context = new TestRagdollPhysicsContext
-            {
-                ReachUpperArmJointSpring = 1200f,
-                ReachUpperArmJointDamper = 120f,
-                ReachUpperArmJointMaxForce = 345f,
-                ReachLowerArmJointSpring = 1400f,
-                ReachLowerArmJointDamper = 140f,
-                ReachLowerArmJointMaxForce = 456f,
-            };
+            var context = new TestRagdollPhysicsContext();
+            context.Profile.reachUpperArmJointSpring = 1200f;
+            context.Profile.reachUpperArmJointDamper = 120f;
+            context.Profile.reachUpperArmJointMaxForce = 345f;
+            context.Profile.reachLowerArmJointSpring = 1400f;
+            context.Profile.reachLowerArmJointDamper = 140f;
+            context.Profile.reachLowerArmJointMaxForce = 456f;
 
             using var harness = RagdollPhysicsHarness.Create(context);
 
@@ -141,12 +165,14 @@ namespace MyFolder.Tests.EditMode
             AssertReachDrive(harness.Joints[3].angularXDrive, 1200f, 120f, 345f);
             AssertReachDrive(harness.Joints[4].angularYZDrive, 1400f, 140f, 456f);
 
-            context.ReachUpperArmJointSpring = 2200f;
-            context.ReachUpperArmJointDamper = 220f;
-            context.ReachUpperArmJointMaxForce = 789f;
-            context.ReachLowerArmJointSpring = 2400f;
-            context.ReachLowerArmJointDamper = 240f;
-            context.ReachLowerArmJointMaxForce = 890f;
+            // 途中で Profile の値を変えても、次の ApplyReachPose で反映されることを確認する
+            // （Drive をキャッシュせず毎回組み直している、というのがこのテストの本題）
+            context.Profile.reachUpperArmJointSpring = 2200f;
+            context.Profile.reachUpperArmJointDamper = 220f;
+            context.Profile.reachUpperArmJointMaxForce = 789f;
+            context.Profile.reachLowerArmJointSpring = 2400f;
+            context.Profile.reachLowerArmJointDamper = 240f;
+            context.Profile.reachLowerArmJointMaxForce = 890f;
 
             harness.ApplyReachPose(isRight: true);
 
@@ -326,46 +352,58 @@ namespace MyFolder.Tests.EditMode
             }
         }
 
+        /// <summary>
+        /// 物理層へ渡すテストダブル。
+        ///
+        /// 2026-08-07 の契約変更で、チューニング値は個別メンバーではなく
+        /// <see cref="RagdollProfile"/> 経由で渡すようになった。ここでは
+        /// ScriptableObject の Profile をテスト用に生成し、従来と同じ既定値を入れている
+        /// （既定値を変えるとテストの前提が変わるため、値は変更していない）。
+        /// </summary>
         private sealed class TestRagdollPhysicsContext : IRagdollPhysicsContext
         {
-            public float BalanceHeight { get; set; } = 2.5f;
-            public float BalanceStrength { get; set; } = 5000f;
-            public float CoreStrength { get; set; } = 1500f;
-            public float LimbStrength { get; set; } = 500f;
-            public float MoveSpeed { get; set; } = 5f;
-            public float TurnSpeed { get; set; } = 10f;
-            public float JumpForce { get; set; } = 10f;
-            public float StepDuration { get; set; } = 0.2f;
-            public float StepHeight { get; set; } = 1.7f;
-            public float FeetMountForce { get; set; } = 25f;
-            public float BalanceMargin { get; set; } = 0.15f;
-            public float IdleBalancePriority { get; set; } = 0.8f;
-            public float WalkingBalancePriority { get; set; } = 0.5f;
-            public float IdlePoseStiffnessMultiplier { get; set; } = 1f;
-            public float WalkingPoseStiffnessMultiplier { get; set; } = 0.5f;
-            public float StateBlendSpeed { get; set; } = 5f;
-            public float BalanceDamperRatio { get; set; } = 0.1f;
-            public float PoseDamperRatio { get; set; } = 0.1f;
-            public float CoreDamperRatio { get; set; } = 0.1f;
-            public float ReachArmInputLimit { get; set; } = 1.2f;
-            public float ReachUpperArmBasePitch { get; set; } = 8f;
-            public float ReachUpperArmPitchPerUnit { get; set; } = 35f;
-            public float ReachUpperArmMinPitch { get; set; } = -60f;
-            public float ReachUpperArmMaxPitch { get; set; } = 70f;
-            public float ReachLowerArmPitch { get; set; } = 30f;
-            public float ReachUpperArmJointSpring { get; set; }
-            public float ReachUpperArmJointDamper { get; set; }
-            public float ReachUpperArmJointMaxForce { get; set; }
-            public float ReachLowerArmJointSpring { get; set; }
-            public float ReachLowerArmJointDamper { get; set; }
-            public float ReachLowerArmJointMaxForce { get; set; }
-            public float RagdollDriveOffSpring { get; set; } = 25f;
-            public float RagdollDriveOffDamper { get; set; } = 5f;
-            public float MovementVelocityLerp { get; set; } = 0.8f;
-            public float AirControlMultiplier { get; set; } = RagdollProfile.DefaultAirControlMultiplier;
-            public float PunchImpulse { get; set; } = 10f;
-            public float PunchRecoveryDelaySeconds { get; set; } = 0.15f;
-            public float PunchRecoveryLerpSpeed { get; set; } = 12f;
+            public RagdollProfile Profile { get; }
+
+            public TestRagdollPhysicsContext()
+            {
+                Profile = ScriptableObject.CreateInstance<RagdollProfile>();
+                Profile.balanceHeight = 2.5f;
+                Profile.balanceStrength = 5000f;
+                Profile.coreStrength = 1500f;
+                Profile.limbStrength = 500f;
+                Profile.moveSpeed = 5f;
+                Profile.turnSpeed = 10f;
+                Profile.jumpForce = 10f;
+                Profile.stepDuration = 0.2f;
+                Profile.stepHeight = 1.7f;
+                Profile.feetMountForce = 25f;
+                Profile.balanceMargin = 0.15f;
+                Profile.idleBalancePriority = 0.8f;
+                Profile.walkingBalancePriority = 0.5f;
+                Profile.idlePoseStiffnessMultiplier = 1f;
+                Profile.walkingPoseStiffnessMultiplier = 0.5f;
+                Profile.stateBlendSpeed = 5f;
+                Profile.balanceDamperRatio = 0.1f;
+                Profile.poseDamperRatio = 0.1f;   // 旧 LimbDamperRatio（改名転送だった）
+                Profile.coreDamperRatio = 0.1f;
+                Profile.reachArmInputLimit = 1.2f;
+                Profile.reachUpperArmBasePitch = 8f;
+                Profile.reachUpperArmPitchPerUnit = 35f;
+                Profile.reachUpperArmMinPitch = -60f;
+                Profile.reachUpperArmMaxPitch = 70f;
+                Profile.reachLowerArmPitch = 30f;
+                Profile.ragdollDriveOffSpring = 25f;
+                Profile.ragdollDriveOffDamper = 5f;
+                Profile.movementVelocityLerp = 0.8f;
+                Profile.airControlMultiplier = RagdollProfile.DefaultAirControlMultiplier;
+                Profile.punchImpulse = 10f;
+                Profile.punchRecoveryDelaySeconds = 0.15f;
+                Profile.punchRecoveryLerpSpeed = 12f;
+                // Reach の Joint 値は既定 0。個別テストが Profile へ直接設定する
+            }
+
+            // Profile から直接読めないものだけを持つ
+            public float MoveSpeed => Profile.moveSpeed;
             public ActionPoseAsset ReachPose { get; set; }
             public bool IsAnyHandGrabbing { get; set; }
             public bool HasStateAuthority { get; set; } = true;

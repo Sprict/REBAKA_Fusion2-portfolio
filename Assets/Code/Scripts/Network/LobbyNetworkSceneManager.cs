@@ -2,7 +2,7 @@ using System.Collections;
 using Fusion;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// Shutdown 時に Fusion がネットワーク登録済みシーンを Unload しないようにする SceneManager。

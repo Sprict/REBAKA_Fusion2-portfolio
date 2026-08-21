@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// プレハブ・ScriptableObject オーサリングを待たずにマップ生成を動かすための、コード定義カタログ。

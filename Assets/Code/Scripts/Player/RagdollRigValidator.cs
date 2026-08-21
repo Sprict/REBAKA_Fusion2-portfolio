@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-namespace MyFolder.Scripts.Player
+namespace Rebaka.Player
 {
     /// <summary>
     /// Unity側のUIでラグドールリグが正常にアタッチされているか検証するクラス

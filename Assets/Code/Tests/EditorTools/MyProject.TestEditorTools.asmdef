@@ -1,6 +1,6 @@
 {
     "name": "MyProject.TestEditorTools",
-    "rootNamespace": "",
+    "rootNamespace": "Rebaka.Tests.EditorTools",
     "references": [
         "MyProject.Scripts"
     ],

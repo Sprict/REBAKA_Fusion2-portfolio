@@ -4,11 +4,11 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using MyFolder.Scripts.Player;
-using MyFolder.Scripts.Settings;
-using MyFolder.Scripts.Utils;
+using Rebaka.Player;
+using Rebaka.Settings;
+using Rebaka.Utils;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// ローカルプレイヤーの入力を収集し、Fusionネットワーク入力として送信するクラス。
@@ -244,10 +244,11 @@ namespace MyFolder.Scripts.Network
             var cam = _mainCamera;
             if (cam != null)
             {
-                camForward = cam.transform.forward;
+                Transform camTransform = cam.transform;
+                camForward = camTransform.forward;
                 camForward.y = 0f;
                 camForward.Normalize();
-                camRight = cam.transform.right;
+                camRight = camTransform.right;
                 camRight.y = 0f;
                 camRight.Normalize();
             }

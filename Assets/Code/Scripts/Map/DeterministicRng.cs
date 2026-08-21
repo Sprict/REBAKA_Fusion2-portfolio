@@ -1,5 +1,5 @@
 // Assets/Code/Scripts/Map/DeterministicRng.cs
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// 生成専用の決定論 PRNG（xorshift64*）。

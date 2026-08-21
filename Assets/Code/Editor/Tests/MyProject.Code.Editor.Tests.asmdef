@@ -1,6 +1,6 @@
 {
     "name": "MyProject.Code.Editor.Tests",
-    "rootNamespace": "",
+    "rootNamespace": "Rebaka.Editor.Tests",
     "references": [
         "MyProject.Code.Editor",
         "UnityEngine.TestRunner",
@@ -20,3 +20,4 @@
     "versionDefines": [],
     "noEngineReferences": false
 }
+

@@ -1,3 +1,4 @@
+using Rebaka.Player;
 using UnityEngine;
 
 public static class CheckFootGrounded

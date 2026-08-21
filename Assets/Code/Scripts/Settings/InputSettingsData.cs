@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using UnityEngine.InputSystem;
 
-namespace MyFolder.Scripts.Settings
+namespace Rebaka.Settings
 {
     public enum GameplayDeviceGroup
     {

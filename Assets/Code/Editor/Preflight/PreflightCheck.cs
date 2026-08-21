@@ -1,4 +1,4 @@
-namespace MyFolder.Editor.Preflight
+namespace Rebaka.Editor.Preflight
 {
     /// <summary>プリフライトチェックの判定3値。確信が持てない場合は必ず Warning に倒す（誤緑が最悪）。</summary>
     public enum PreflightStatus

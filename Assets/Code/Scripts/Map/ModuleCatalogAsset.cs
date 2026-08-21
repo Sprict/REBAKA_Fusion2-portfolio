@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Map
+namespace Rebaka.Map
 {
     /// <summary>
     /// 生成に使うモジュール定義の順序付き集合（段階 B）。Inspector で <see cref="ModuleDefinition"/> を並べる。

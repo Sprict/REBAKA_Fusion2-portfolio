@@ -85,10 +85,10 @@ State Authority側のみで物理を実行し（`HasStateAuthority`ガード）�
 完全 PCG は不採用としました。モジュール定義をホスト側で抽選・接続し、生成した配置リストを `[Networked]` なマニフェストとしてクライアントへ配布、NavMesh に頼らない自前のパス探索グラフを持たせています。現在は MapNetworkSandbox で単一階層の2クライアント同期まで確認済みで、部屋プレハブのバリエーション、複数階層、メインゲームシーンへの統合は未実装です。
 関連: [`Assets/Code/Scripts/Map/MapGenerator.cs`](Assets/Code/Scripts/Map/MapGenerator.cs) / [`Assets/Code/Scripts/Map/MapNetworkDistributor.cs`](Assets/Code/Scripts/Map/MapNetworkDistributor.cs) / [devlog: マップ生成方式決定](Docs/devlogs/2026-06-27_map_generation_decision.md)
 
-### 自作開発ツール
+### 開発支援ツール
 
-Network Debug HUD（実機での同期状態のリアルタイム可視化）、Preflight checker（統合前のネットワーク配線チェック）、UnusedAssetFinder（未使用アセット検出 Editor 拡張）、SyncMetricsRecorder（同期負荷の計測）などを内製しています。
-関連: [`Assets/Code/Scripts/Debugging/NetworkDebugHud.cs`](Assets/Code/Scripts/Debugging/NetworkDebugHud.cs) / [`Assets/UnusedAssetFinder/`](Assets/UnusedAssetFinder/)
+Network Debug HUD（実機での同期状態のリアルタイム可視化）、Preflight checker（統合前のネットワーク配線チェック）、UnusedAssetFinder（未使用アセット検出 Editor 拡張）、SyncMetricsRecorder（同期負荷の計測）を用意しています。いずれも実装はAIによるものです。Preflight checkerについては、私はUnity Editorでの手動確認を担当しました。
+関連: [`Assets/Code/Scripts/Debugging/NetworkDebugHud.cs`](Assets/Code/Scripts/Debugging/NetworkDebugHud.cs) / [`Assets/UnusedAssetFinder/`](Assets/UnusedAssetFinder/) / [`Preflightの検証記録`](Docs/VERIFICATION.md)
 
 ---
 

@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MyFolder.Scripts.Network
+namespace Rebaka.Network
 {
     /// <summary>
     /// プレイヤーの生成（Spawn）と破棄（Despawn）を管理するクラス。
@@ -28,11 +28,6 @@ namespace MyFolder.Scripts.Network
         // 定期クリーンアップ用タイマー
         private float _cleanupTimer;
         private const float CleanupInterval = 3f;
-
-        /// <summary>
-        /// スポーン済みプレイヤーの読み取り専用アクセス
-        /// </summary>
-        public IReadOnlyDictionary<PlayerRef, NetworkObject> SpawnedCharacters => _spawnedCharacters;
 
         private void Awake()
         {
@@ -87,7 +82,7 @@ namespace MyFolder.Scripts.Network
 
             Vector3 spawnPosition = _spawnPointManager != null
                 ? _spawnPointManager.AssignSpawnPoint(player)
-                : new Vector3(0, 2, 0);
+                : SpawnPointManager.GetDefaultSpawnPosition();
 
             NetworkObject networkPlayerObject = runner.Spawn(playerPrefab, spawnPosition, Quaternion.identity, player);
             _spawnedCharacters[player] = networkPlayerObject;

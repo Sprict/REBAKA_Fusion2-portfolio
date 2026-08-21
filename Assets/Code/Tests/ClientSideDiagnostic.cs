@@ -3,7 +3,7 @@ using Fusion;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using MyFolder.Scripts.Player;
+using Rebaka.Player;
 
 /// <summary>
 /// クライアント側でラグドール挙動の品質を自動計測する診断コンポーネント。
